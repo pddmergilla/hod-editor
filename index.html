@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#140f1c">
+  <title>Harmony of Dissonance · Field Editor</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="profile.js" defer></script>
+  <script src="core.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Harmony of Dissonance Field Editor home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 40 40" role="img"><path d="M20 3 33 10v17L20 36 7 27V10L20 3Z"/><path d="M15 14v12m10-12v12M15 20h10"/></svg>
+        </span>
+        <span class="brand-copy"><span class="eyebrow">FIELD EDITOR</span><strong>Harmony of Dissonance</strong></span>
+      </a>
+      <div class="top-actions">
+        <span class="local-tag"><span class="pulse-dot"></span>LOCAL SESSION</span>
+        <label class="button button-primary" for="rom-file" id="load-button">
+          <span class="button-icon" aria-hidden="true">＋</span><span id="load-label">Load .gba</span>
+          <input id="rom-file" type="file" accept=".gba,application/octet-stream" hidden>
+        </label>
+        <button class="button button-quiet" id="undo-button" type="button" disabled title="Undo the latest edit">
+          <span aria-hidden="true">↶</span><span>Undo</span>
+        </button>
+        <button class="button button-download" id="download-button" type="button" disabled>
+          <span aria-hidden="true">↓</span><span>Download ROM</span>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <section class="welcome-strip" aria-label="Editor status">
+        <div>
+          <p class="eyebrow">A QUIET TOOL FOR A HAUNTED CASTLE</p>
+          <p class="welcome-copy">Load a local ROM to explore rooms and tune the numbers behind the journey.</p>
+        </div>
+        <div class="session-state">
+          <span class="state-orb" id="state-orb"></span>
+          <div><span class="state-label" id="file-state">NO ROM LOADED</span><span class="state-detail" id="change-count">Your file stays on this device</span></div>
+        </div>
+      </section>
+
+      <nav class="main-tabs" role="tablist" aria-label="Editor sections">
+        <button class="main-tab is-active" id="map-tab" role="tab" aria-selected="true" aria-controls="map-panel" data-panel="map-panel" type="button">
+          <span class="tab-icon" aria-hidden="true">⌘</span>Map Editor
+        </button>
+        <button class="main-tab" id="stats-tab" role="tab" aria-selected="false" aria-controls="stats-panel" data-panel="stats-panel" type="button">
+          <span class="tab-icon" aria-hidden="true">✧</span>Stats Editor
+        </button>
+        <span class="tab-rule" aria-hidden="true"></span>
+        <span class="tab-note">CASTLE RECORDS · VOL. 01</span>
+      </nav>
+
+      <section class="panel map-panel is-visible" id="map-panel" role="tabpanel" aria-labelledby="map-tab">
+        <div class="map-layout">
+          <aside class="room-sidebar" aria-label="Room browser">
+            <div class="section-heading">
+              <div><p class="eyebrow">FIELD GUIDE</p><h1>Map Editor</h1></div>
+              <span class="heading-seal" aria-hidden="true">⌖</span>
+            </div>
+            <div class="castle-switch" role="group" aria-label="Choose castle">
+              <button type="button" class="castle-button is-selected" data-castle="A" aria-pressed="true">Castle A</button>
+              <button type="button" class="castle-button" data-castle="B" aria-pressed="false">Castle B</button>
+              <button type="button" class="castle-button" data-castle="Other" aria-pressed="false">Other</button>
+            </div>
+            <label class="search-box">
+              <span class="search-glyph" aria-hidden="true">⌕</span>
+              <span class="sr-only">Search rooms</span>
+              <input id="room-search" type="search" placeholder="Search rooms…" autocomplete="off">
+              <kbd>/</kbd>
+            </label>
+            <div class="list-caption"><span>ROOM INDEX</span><span id="room-count">—</span></div>
+            <div class="room-list" id="room-list" aria-live="polite">
+              <div class="list-empty"><span class="empty-ornament">✦</span><strong>Waiting for a record</strong><span>Load a ROM to reveal its rooms.</span></div>
+            </div>
+          </aside>
+
+          <div class="map-workspace">
+            <div class="room-toolbar">
+              <div class="room-title-block">
+                <p class="eyebrow" id="room-breadcrumb">MAP ARCHIVE <span>·</span> CASTLE A</p>
+                <h2 id="room-title">Choose a room</h2>
+                <p class="room-subtitle" id="room-subtitle">Your map will appear here after a ROM is loaded.</p>
+              </div>
+              <button class="button button-outline move-toggle" id="move-toggle" type="button" aria-pressed="false" disabled>
+                <span aria-hidden="true">↗</span><span>Move mode</span>
+              </button>
+            </div>
+
+            <div class="map-card">
+              <div class="map-card-top">
+                <span class="map-legend"><i class="legend-dot enemy"></i>Enemy <i class="legend-dot object"></i>Object <i class="legend-dot pickup"></i>Pickup</span>
+                <span class="map-coordinates" id="map-size">— × — PX</span>
+              </div>
+              <div class="map-viewport" id="map-viewport">
+                <div class="map-empty">
+                  <div class="empty-crest" aria-hidden="true"><span>✦</span></div>
+                  <strong>The map is sleeping</strong>
+                  <span>Choose a room to see its layout and markers.</span>
+                </div>
+              </div>
+              <div class="map-card-bottom">
+                <span id="map-hint">Select a room from the index.</span>
+                <span class="map-key"><kbd>Click</kbd> marker to inspect</span>
+              </div>
+            </div>
+
+            <section class="entity-panel" aria-labelledby="entity-heading">
+              <div class="entity-panel-heading">
+                <div><p class="eyebrow">ROOM CONTENTS</p><h3 id="entity-heading">Entity workshop</h3></div>
+                <span class="entity-count" id="entity-count">0 MARKERS</span>
+              </div>
+              <div class="entity-columns">
+                <div class="entity-list-wrap">
+                  <div class="subsection-label">PLACED MARKERS</div>
+                  <div class="entity-list" id="entity-list">
+                    <p class="muted-note">Choose a room to inspect its contents.</p>
+                  </div>
+                </div>
+                <div class="entity-controls">
+                  <div class="subsection-label">ADD AN ENTITY</div>
+                  <label class="field-label" for="add-template">Template</label>
+                  <select id="add-template" disabled><option value="">Choose a room first</option></select>
+                  <div class="coordinate-fields">
+                    <label><span class="field-label">X</span><input id="add-x" type="number" inputmode="numeric" value="32" min="-32768" max="32767" disabled></label>
+                    <label><span class="field-label">Y</span><input id="add-y" type="number" inputmode="numeric" value="32" min="-32768" max="32767" disabled></label>
+                  </div>
+                  <button class="button button-primary button-wide" id="add-entity" type="button" disabled>Add to room <span aria-hidden="true">＋</span></button>
+                </div>
+                <div class="entity-controls selected-controls">
+                  <div class="subsection-label">SELECTED MARKER</div>
+                  <p class="selected-name" id="selected-name">Nothing selected</p>
+                  <div class="coordinate-fields">
+                    <label><span class="field-label">X</span><input id="edit-x" type="number" inputmode="numeric" min="-32768" max="32767" disabled></label>
+                    <label><span class="field-label">Y</span><input id="edit-y" type="number" inputmode="numeric" min="-32768" max="32767" disabled></label>
+                  </div>
+                  <label class="field-label" for="replace-template">Replace with template <span class="optional-label">OPTIONAL</span></label>
+                  <select id="replace-template" disabled><option value="">Keep current type</option></select>
+                  <div class="button-pair">
+                    <button class="button button-outline button-grow" id="apply-entity" type="button" disabled>Apply</button>
+                    <button class="button button-danger" id="remove-entity" type="button" disabled>Remove</button>
+                  </div>
+                </div>
+              </div>
+              <p class="entity-tip"><span aria-hidden="true">✦</span> Turn on Move mode, then click a point on the map to place the selected marker.</p>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel stats-panel" id="stats-panel" role="tabpanel" aria-labelledby="stats-tab" hidden>
+        <div class="stats-heading">
+          <div class="section-heading">
+            <div><p class="eyebrow">CHARACTER & CREATURE LEDGER</p><h1>Stats Editor</h1><p class="stats-intro">Edits stay in this tab until you download a ROM.</p></div>
+          </div>
+          <label class="search-box stats-search">
+            <span class="search-glyph" aria-hidden="true">⌕</span><span class="sr-only">Search stat entries</span>
+            <input id="stats-search" type="search" placeholder="Search stats…" autocomplete="off"><kbd>/</kbd>
+          </label>
+        </div>
+        <div class="stats-toolbar">
+          <div class="stats-categories" role="tablist" aria-label="Stat category">
+            <button type="button" class="category-button is-selected" data-category="juste" aria-selected="true">Juste</button>
+            <button type="button" class="category-button" data-category="enemies" aria-selected="false">Enemies</button>
+            <button type="button" class="category-button" data-category="bosses" aria-selected="false">Bosses</button>
+            <button type="button" class="category-button" data-category="spells" aria-selected="false">Spells</button>
+          </div>
+          <span class="ledger-count" id="stats-count">—</span>
+        </div>
+        <div class="stats-list" id="stats-list">
+          <div class="stats-empty"><span class="empty-crest" aria-hidden="true"><span>✧</span></span><strong>No ledger loaded</strong><span>Load a ROM to view editable stats.</span></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-brand"><span class="footer-mark" aria-hidden="true">✦</span><span>Edits are downloaded as a separate GBA file.</span></div>
+      <div class="credits">
+        <span class="eyebrow">WITH THANKS TO</span>
+        <a href="https://github.com/LagoLunatic/DSVEdit" target="_blank" rel="noreferrer">DSVEdit <span aria-hidden="true">↗</span></a>
+        <a href="https://www.romhackplaza.org/romhacks/castlevania-harmony-of-dissonance-visual-improvement-game-boy-advance-romhack" target="_blank" rel="noreferrer">Visual Improvement <span aria-hidden="true">↗</span></a>
+        <a href="https://github.com/alexarroyoduque/REharmonized/releases/tag/1.3.1" target="_blank" rel="noreferrer">REharmonized 1.3.1 <span aria-hidden="true">↗</span></a>
+        <span class="credit-pending" title="Earlier Lure Key and Hint Card 3">Better Fast Travel <small>bundled notes</small></span>
+      </div>
+      <span class="footer-edition">HOD · LOCAL BUILD</span>
+    </footer>
+  </div>
+  <div class="live-notice" id="live-notice" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
