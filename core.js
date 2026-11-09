@@ -61,7 +61,7 @@
       check(globalThis.crypto?.subtle, 'Open the editor from a local file or a secure website.');
       const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
       const actual = Array.from(hash, n => n.toString(16).padStart(2, '0')).join('');
-      check(actual === profile.sha256, 'This ROM differs from the supported modded base.');
+      check(profile.supportedHashes.includes(actual), 'This ROM differs from the supported modded base.');
     }
     return createModel(bytes, read);
   }
