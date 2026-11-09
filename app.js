@@ -19,6 +19,7 @@
     mapSize: byId("map-size"),
     mapViewport: byId("map-viewport"),
     mapHint: byId("map-hint"),
+    collisionToggle: byId("collision-toggle"),
     moveToggle: byId("move-toggle"),
     entityCount: byId("entity-count"),
     entityList: byId("entity-list"),
@@ -48,6 +49,8 @@
     addTemplateId: "",
     category: "juste",
     moveMode: false,
+    showCollision: false,
+    roomArtPreview: null,
     noticeTimer: 0
   };
 
@@ -212,33 +215,89 @@
     return { width, height };
   }
 
+  function roomCollision(room) {
+    try {
+      const collision = room && room.collision;
+      if (!collision) return null;
+      const tiles = collision.tiles;
+      if (!tiles || typeof tiles.length !== "number") return null;
+      return { geometry: collision, tiles, tileCount: tiles.length };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function roomArtPreview(room, dimensions) {
+    if (state.roomArtPreview && state.roomArtPreview.model === state.model && state.roomArtPreview.roomId === room.id) {
+      return state.roomArtPreview;
+    }
+
+    const preview = { model: state.model, roomId: room.id, status: "unsupported", dataUrl: "", width: 0, height: 0 };
+    try {
+      if (typeof state.model.renderRoomArt !== "function") {
+        state.roomArtPreview = preview;
+        return preview;
+      }
+      const art = state.model.renderRoomArt(room.id);
+      if (!art) {
+        state.roomArtPreview = preview;
+        return preview;
+      }
+
+      const width = Number(art.width);
+      const height = Number(art.height);
+      const pixels = art.pixels;
+      if (!Number.isInteger(width) || width < 1 || !Number.isInteger(height) || height < 1 ||
+          width !== dimensions.width || height !== dimensions.height ||
+          !(pixels instanceof Uint8ClampedArray) || pixels.length !== width * height * 4) {
+        throw new Error("Room artwork has an invalid size.");
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Room artwork could not be drawn.");
+      const imageData = context.createImageData(width, height);
+      imageData.data.set(pixels);
+      context.putImageData(imageData, 0, 0);
+      const dataUrl = canvas.toDataURL("image/png");
+      if (!dataUrl || dataUrl === "data:,") throw new Error("Room artwork could not be saved.");
+      preview.status = "ready";
+      preview.dataUrl = dataUrl;
+      preview.width = width;
+      preview.height = height;
+    } catch (error) {
+      preview.status = "failed";
+    }
+    state.roomArtPreview = preview;
+    return preview;
+  }
+
   function entityLabelShort(entity, index) {
     const label = labelForEntity(entity, index);
     return label.length > 22 ? label.slice(0, 21) + "…" : label;
   }
 
   function collisionRects(room) {
-    const collision = room.collision;
-    if (!collision || !collision.tiles || typeof collision.tiles.length !== "number") return "";
-    const cols = Math.max(0, Math.trunc(numeric(collision.width, 0)));
-    const rows = Math.max(0, Math.trunc(numeric(collision.height, 0)));
-    if (!cols || !rows) return "";
-    let rects = "";
-    const limit = Math.min(cols * rows, collision.tiles.length);
-    for (let index = 0; index < limit; index += 1) {
-      if (!collision.tiles[index]) continue;
-      const x = (index % cols) * 16;
-      const y = Math.floor(index / cols) * 16;
-      rects += '<rect class="collision-tile" x="' + x + '" y="' + y + '" width="16" height="16"/>';
+    try {
+      const collision = roomCollision(room);
+      if (!collision) return "";
+      const cols = Math.max(0, Math.trunc(numeric(collision.geometry.width, 0)));
+      const rows = Math.max(0, Math.trunc(numeric(collision.geometry.height, 0)));
+      if (!cols || !rows) return "";
+      let rects = "";
+      const limit = Math.min(cols * rows, collision.tileCount);
+      for (let index = 0; index < limit; index += 1) {
+        if (!collision.tiles[index]) continue;
+        const x = (index % cols) * 16;
+        const y = Math.floor(index / cols) * 16;
+        rects += '<rect class="collision-tile" x="' + x + '" y="' + y + '" width="16" height="16"/>';
+      }
+      return rects;
+    } catch (error) {
+      return "";
     }
-    return rects;
-  }
-
-  function gridLines(width, height) {
-    let lines = '<g class="map-grid" aria-hidden="true">';
-    for (let x = 0; x <= width; x += 16) lines += '<path d="M ' + x + ' 0 V ' + height + '"/>';
-    for (let y = 0; y <= height; y += 16) lines += '<path d="M 0 ' + y + ' H ' + width + '"/>';
-    return lines + '</g><rect class="map-edge" x=".5" y=".5" width="' + Math.max(0, width - 1) + '" height="' + Math.max(0, height - 1) + '"/>';
   }
 
   function markerMarkup(entity, index) {
@@ -252,15 +311,19 @@
       '<text class="marker-label" x="' + (x + 9) + '" y="' + (y - 7) + '">' + label + '</text></g>';
   }
 
-  function renderRoomSvg(room, dimensions, entities) {
+  function renderRoomSvg(room, dimensions, entities, preview) {
     const width = dimensions.width;
     const height = dimensions.height;
     const markers = entities.map(markerMarkup).join("");
     const moveClass = state.moveMode ? " is-moving" : "";
+    const background = preview.status === "ready"
+      ? '<image class="room-art" href="' + preview.dataUrl + '" x="0" y="0" width="' + preview.width + '" height="' + preview.height + '" preserveAspectRatio="none" image-rendering="pixelated"/>'
+      : '<rect x="0" y="0" width="' + width + '" height="' + height + '" fill="#21192b"/>';
+    const collision = state.showCollision || preview.status !== "ready" ? collisionRects(room) : "";
     return '<svg id="room-map" class="room-svg' + moveClass + '" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Room layout with entity markers">' +
       '<title>' + escapeHtml(room.name || room.id) + ' layout</title>' +
-      '<rect x="0" y="0" width="' + width + '" height="' + height + '" fill="#21192b"/>' +
-      '<g aria-label="Collision geometry">' + collisionRects(room) + '</g>' + gridLines(width, height) + markers + '</svg>';
+      background + '<g class="collision-overlay" aria-label="Collision geometry">' + collision + '</g>' +
+      '<rect class="map-edge" x=".5" y=".5" width="' + Math.max(0, width - 1) + '" height="' + Math.max(0, height - 1) + '"/>' + markers + '</svg>';
   }
 
   function renderEntityList(room, entities) {
@@ -323,6 +386,10 @@
     ui.moveToggle.setAttribute("aria-pressed", String(state.moveMode));
     ui.moveToggle.classList.toggle("is-moving", state.moveMode);
     if (!room) {
+      state.roomArtPreview = null;
+      state.showCollision = false;
+      ui.collisionToggle.checked = false;
+      ui.collisionToggle.disabled = true;
       ui.roomTitle.textContent = "Choose a room";
       ui.roomSubtitle.textContent = state.model ? "Select a room from the field guide to begin." : "Your map will appear here after a ROM is loaded.";
       ui.roomBreadcrumb.innerHTML = 'MAP ARCHIVE <span>·</span> CASTLE ' + escapeHtml(state.castle);
@@ -337,6 +404,7 @@
 
     const area = currentRoomArea();
     const dimensions = roomDimensions(room);
+    const preview = roomArtPreview(room, dimensions);
     const entities = roomEntities(room);
     if (state.entityIndex !== null && !entities[state.entityIndex]) state.entityIndex = null;
 
@@ -344,8 +412,22 @@
     ui.roomSubtitle.textContent = (area && area.name ? area.name + " · " : "") + dimensions.width + " by " + dimensions.height + " pixels";
     ui.roomBreadcrumb.innerHTML = escapeHtml((area && area.name) || "MAP ARCHIVE") + ' <span>·</span> CASTLE ' + escapeHtml(state.castle);
     ui.mapSize.textContent = dimensions.width + " × " + dimensions.height + " PX";
-    ui.mapViewport.innerHTML = renderRoomSvg(room, dimensions, entities);
-    ui.mapHint.textContent = state.moveMode ? "Move mode is on · click the map to place the selected marker." : (room.collision ? "Collision tiles are shown in violet." : "The grid is spaced at 16 pixels.");
+    const collision = roomCollision(room);
+    const hasCollision = Boolean(collision && collision.tileCount);
+    const fallbackCollision = preview.status !== "ready" && hasCollision;
+    ui.collisionToggle.checked = state.showCollision || fallbackCollision;
+    ui.collisionToggle.disabled = !hasCollision || fallbackCollision;
+    ui.mapViewport.innerHTML = renderRoomSvg(room, dimensions, entities, preview);
+    const moveHint = state.moveMode ? " Move mode is on · click the map to place the selected marker." : "";
+    if (preview.status === "unsupported") {
+      ui.mapHint.textContent = "Artwork is unavailable; showing the room geometry fallback." + moveHint;
+    } else if (preview.status === "failed") {
+      ui.mapHint.textContent = "Artwork could not be rendered; showing the room geometry fallback." + moveHint;
+    } else if (state.moveMode) {
+      ui.mapHint.textContent = "Move mode is on · click the map to place the selected marker.";
+    } else {
+      ui.mapHint.textContent = state.showCollision ? "Room artwork · collision overlay is on." : "Room artwork · pixel view.";
+    }
     renderEntityList(room, entities);
     renderEntityControls(room, entities);
     bindMap(room, dimensions);
@@ -628,6 +710,10 @@
   });
   ui.moveToggle.addEventListener("click", () => {
     state.moveMode = !state.moveMode;
+    renderMapWorkspace();
+  });
+  ui.collisionToggle.addEventListener("change", () => {
+    state.showCollision = ui.collisionToggle.checked;
     renderMapWorkspace();
   });
   ui.addTemplate.addEventListener("change", () => {

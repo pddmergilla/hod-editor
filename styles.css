@@ -106,6 +106,11 @@ kbd { min-width: 17px; padding: 2px 4px; text-align: center; color: #81748b; bor
 .map-card { overflow: hidden; }
 .map-card-top, .map-card-bottom { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 13px; background: rgba(11, 8, 16, .27); }
 .map-card-top { border-bottom: 1px solid var(--line); }
+.map-card-tools { display: flex; align-items: center; justify-content: flex-end; gap: 13px; }
+.collision-control { display: inline-flex; align-items: center; gap: 5px; color: #a89aaf; cursor: pointer; font-size: 9px; white-space: nowrap; }
+.collision-control input { width: 12px; height: 12px; margin: 0; accent-color: var(--amber); }
+.collision-control input:disabled { cursor: not-allowed; }
+.collision-control:has(input:disabled) { opacity: .48; cursor: not-allowed; }
 .map-card-bottom { min-height: 31px; border-top: 1px solid var(--line); color: #8e8097; font-size: 9px; }
 .map-legend { display: flex; align-items: center; gap: 7px; color: #a89aaf; font-size: 9px; }
 .legend-dot { width: 6px; height: 6px; margin-left: 6px; border-radius: 50%; background: #d4868f; }
@@ -114,7 +119,8 @@ kbd { min-width: 17px; padding: 2px 4px; text-align: center; color: #81748b; bor
 .legend-dot.pickup { background: #f1c176; }
 .map-coordinates { color: #7c6c85; font-size: 8px; letter-spacing: .1em; }
 .map-viewport { min-height: 260px; max-height: min(66vh, 620px); overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 14px; background-color: #15101c; background-image: radial-gradient(ellipse at center, rgba(83, 57, 94, .19), transparent 62%); }
-.room-svg { display: block; width: min(100%, 850px); height: auto; overflow: visible; border: 1px solid rgba(222, 188, 238, .24); background: #21192b; }
+.room-svg { display: block; width: min(100%, 850px); height: auto; overflow: visible; border: 1px solid rgba(222, 188, 238, .24); background: #21192b; image-rendering: pixelated; }
+.room-art { image-rendering: pixelated; }
 .room-svg.is-moving { cursor: crosshair; }
 .collision-tile { fill: rgba(191, 143, 207, .18); stroke: rgba(214, 175, 228, .12); stroke-width: .65; }
 .map-grid { stroke: rgba(208, 185, 223, .11); stroke-width: .55; }
@@ -237,6 +243,7 @@ kbd { min-width: 17px; padding: 2px 4px; text-align: center; color: #81748b; bor
   .room-list { max-height: 225px; }
   .map-workspace { min-width: 0; }
   .map-viewport { min-height: 220px; max-height: 55vh; padding: 9px; }
+  .map-card-top, .map-card-bottom { flex-wrap: wrap; padding-top: 5px; padding-bottom: 5px; }
   .room-title-block h2 { font-size: 20px; }
   .entity-panel { padding: 13px; }
   .entity-columns { grid-template-columns: 1fr 1fr; gap: 13px; }
@@ -268,6 +275,7 @@ kbd { min-width: 17px; padding: 2px 4px; text-align: center; color: #81748b; bor
   .move-toggle { gap: 5px; padding: 0 7px; font-size: 9px; }
   .map-card-top, .map-card-bottom { padding-right: 8px; padding-left: 8px; }
   .map-legend { gap: 4px; font-size: 8px; }
+  .map-card-tools { gap: 7px; }
   .map-card-bottom { font-size: 8px; }
   .entity-columns { grid-template-columns: 1fr; }
   .entity-list-wrap { grid-column: auto; }

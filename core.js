@@ -158,7 +158,7 @@
   function decompress(read, at) {
     const header = read.word(at);
     const size = header >>> 8;
-    check((header & 255) === 0x10 && size > 0 && size <= 0x10000, 'Unknown collision data.');
+    check((header & 255) === 0x10 && size >= 4 && size <= 0x10000, 'Unknown compressed data.');
     const result = new Uint8Array(size);
     let source = at + 4;
     let written = 0;
@@ -171,7 +171,7 @@
         }
         const high = read.byte(source++);
         const distance = ((high & 15) << 8 | read.byte(source++)) + 1;
-        check(distance <= written, 'Invalid collision data.');
+        check(distance <= written, 'Invalid compressed data.');
         const count = Math.min((high >> 4) + 3, size - written);
         for (let i = 0; i < count; i++) {
           result[written] = result[written - distance];
@@ -179,7 +179,8 @@
         }
       }
     }
-    return result;
+    // Skip the extra four-byte header.
+    return result.subarray(4);
   }
 
   function collisionFor(read, room, cache) {
@@ -234,15 +235,197 @@
     };
     const rooms = new Map();
     const areas = parseAreas(read, label, rooms);
-    const tileCache = new Map();
+    const compressedCache = new Map();
     for (const area of areas) {
       for (const room of area.rooms) {
         let cached;
         Object.defineProperty(room, 'collision', {get() {
-          if (cached === undefined) cached = collisionFor(read, room, tileCache);
+          if (cached === undefined) cached = collisionFor(read, room, compressedCache);
           return cached;
         }});
       }
+    }
+
+    function decompressedAt(pointer) {
+      const at = read.offset(pointer, 4);
+      if (at === null) return null;
+      if (!compressedCache.has(at)) compressedCache.set(at, decompress(read, at));
+      return compressedCache.get(at);
+    }
+
+    const paletteCache = new Map();
+
+
+    function backgroundPalette(room) {
+      const entries = readList(read, read.word(room.at + 20), 8, at => !read.word(at + 4), 16);
+      const wrapper = entries.find(at => read.half(at) === 0);
+      if (wrapper === undefined) return null;
+      const pointer = read.word(wrapper + 4);
+      if (paletteCache.has(pointer)) return paletteCache.get(pointer);
+      const start = read.offset(pointer, 4);
+      const count = read.byte(start + 2) * 16;
+      const data = read.offset(pointer + 4, count * 2);
+      const colors = new Uint8Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        const value = read.half(data + i * 2);
+        for (let channel = 0; channel < 3; channel++) {
+          const five = (value >>> (5 * channel)) & 31;
+          colors[i * 3 + channel] = (five << 3) | (five >> 2);
+        }
+      }
+      paletteCache.set(pointer, colors);
+      return colors;
+    }
+
+    function backgroundGraphics(room) {
+      const listAt = read.offset(read.word(room.at + 12), 16);
+      if (listAt === null) return [];
+      return Array.from({length: 4}, (_, slot) => {
+        const pointer = read.word(listAt + slot * 4);
+        if (!pointer) return null;
+        const wrapperAt = read.offset(pointer, 8);
+        const kind = read.byte(wrapperAt);
+        const bpp = read.byte(wrapperAt + 1);
+        let data;
+        if (kind === 1) {
+          data = decompressedAt(read.word(wrapperAt + 4));
+        } else if (kind === 0) {
+          const length = read.byte(wrapperAt + 3) * 512;
+          const dataAt = read.offset(pointer + 4, length);
+          data = bytes.subarray(dataAt, dataAt + length);
+        }
+        return data?.length ? {data, bpp} : null;
+      });
+    }
+
+    function renderRoomArt(id) {
+      const room = roomById(id);
+      const layerListAt = read.offset(read.word(room.at + 8), 24);
+      if (layerListAt === null) return null;
+      const palette = backgroundPalette(room);
+      const graphics = backgroundGraphics(room);
+      if (!palette || !graphics.some(Boolean)) return null;
+
+      const rows = [];
+      const effects = [];
+      for (let index = 0; index < 3; index++) {
+        const entry = layerListAt + index * 8;
+        const visualEffect = read.byte(entry + 1);
+        effects.push({index, visualEffect});
+        const metadataPointer = read.word(entry + 4);
+        if (!metadataPointer) continue;
+        const metadata = read.offset(metadataPointer, 16);
+        const layerWidth = read.byte(metadata);
+        const layerHeight = read.byte(metadata + 1);
+        const type = read.half(metadata + 2);
+        if (!layerWidth || !layerHeight || layerWidth > 15 || layerHeight > 15 ||
+            (type !== 2 && type !== 3)) continue;
+        const tilesetPointer = read.word(metadata + 4);
+        const layoutPointer = read.word(metadata + 12);
+        if (!tilesetPointer || !layoutPointer) continue;
+        const layoutAt = read.offset(layoutPointer, layerWidth * layerHeight * 128);
+        const tileset = decompressedAt(tilesetPointer);
+        if (!tileset?.length) continue;
+        rows.push({
+          index, z: read.byte(entry), bgControl: read.half(entry + 2),
+          width: layerWidth, height: layerHeight, type, layoutAt, tileset,
+        });
+      }
+      if (!rows.length) return null;
+
+      const width = room.pixelWidth;
+      const height = room.pixelHeight;
+      const pixels = new Uint8ClampedArray(width * height * 4);
+      for (let i = 3; i < pixels.length; i += 4) pixels[i] = 255;
+      const effect = effects.filter(row => row.visualEffect === 0x0d || row.visualEffect === 0x0f).at(-1);
+      rows.sort((a, b) => b.z - a.z);
+
+      for (const layer of rows) {
+        const halfAlpha = effect && ((effect.visualEffect === 0x0d && layer.index === 1) ||
+          (effect.visualEffect === 0x0f && layer.index === 0));
+        const alpha = halfAlpha ? ((15 << 3) | (15 >> 2)) : 255;
+        const charBase = ((layer.bgControl >> 2) & 3) * 0x4000;
+        const blockCache = new Map();
+        const mapWidth = layer.width * 8;
+        const mapHeight = layer.height * 8;
+
+        function renderBlock(reference) {
+          if (blockCache.has(reference)) return blockCache.get(reference);
+          const output = new Uint8Array(32 * 32 * 4);
+          const blockIndex = reference & 0x3fff;
+          const blockH = Boolean(reference & 0x4000);
+          const blockV = Boolean(reference & 0x8000);
+
+          const wide = layer.type === 3;
+          const bytesPerTile = wide ? 16 : 32;
+          const tileStart = (blockIndex - 1) * bytesPerTile;
+          if (tileStart + bytesPerTile > layer.tileset.length) return output;
+
+          for (let miniY = 0; miniY < 4; miniY++) {
+            for (let miniX = 0; miniX < 4; miniX++) {
+              const sourceMiniX = blockH ? 3 - miniX : miniX;
+              const sourceMiniY = blockV ? 3 - miniY : miniY;
+              const miniIndex = sourceMiniY * 4 + sourceMiniX;
+              const at = tileStart + miniIndex * (wide ? 1 : 2);
+              const ref = wide ? layer.tileset[at] : layer.tileset[at] | (layer.tileset[at + 1] << 8);
+              const bytesPerMini = wide ? 64 : 32;
+              const vram = charBase + (ref & 255) * bytesPerMini + (wide ? 0 : ((ref >> 8) & 3) * 0x2000);
+              const slot = vram >= 0x8000 ? 3 : vram >>> 13;
+              const page = graphics[slot];
+              const gfxAt = vram - (slot === 3 ? 0x8000 : slot * 0x2000);
+              if (page?.bpp !== (wide ? 8 : 4) || gfxAt < 0 || gfxAt + bytesPerMini > page.data.length) continue;
+              const flipX = blockH !== (!wide && Boolean(ref & 0x400));
+              const flipY = blockV !== (!wide && Boolean(ref & 0x800));
+              const paletteBase = wide ? 0 : (ref >>> 12) * 16;
+
+              for (let py = 0; py < 8; py++) {
+                const sourceY = flipY ? 7 - py : py;
+                for (let px = 0; px < 8; px++) {
+                  const sourceX = flipX ? 7 - px : px;
+                  const source = sourceY * 8 + sourceX;
+                  const packed = page.data[gfxAt + (wide ? source : source >> 1)];
+                  const colorIndex = wide ? packed : (packed >>> ((source & 1) * 4)) & 15;
+                  const color = (paletteBase + colorIndex) * 3;
+                  if (!colorIndex || color >= palette.length) continue;
+                  const out = ((miniY * 8 + py) * 32 + miniX * 8 + px) * 4;
+                  output[out] = palette[color];
+                  output[out + 1] = palette[color + 1];
+                  output[out + 2] = palette[color + 2];
+                  output[out + 3] = 255;
+                }
+              }
+            }
+          }
+          blockCache.set(reference, output);
+          return output;
+        }
+
+        for (let blockY = 0; blockY < mapHeight && blockY * 32 < height; blockY++) {
+          for (let blockX = 0; blockX < mapWidth && blockX * 32 < width; blockX++) {
+            const reference = read.half(layer.layoutAt + (blockY * mapWidth + blockX) * 2);
+            if (!(reference & 0x3fff)) continue;
+            const block = renderBlock(reference);
+            for (let y = 0; y < 32 && blockY * 32 + y < height; y++) {
+              for (let x = 0; x < 32 && blockX * 32 + x < width; x++) {
+                const from = (y * 32 + x) * 4;
+                if (!block[from + 3]) continue;
+                const to = ((blockY * 32 + y) * width + blockX * 32 + x) * 4;
+                if (alpha === 255) {
+                  pixels[to] = block[from];
+                  pixels[to + 1] = block[from + 1];
+                  pixels[to + 2] = block[from + 2];
+                } else {
+                  const inverse = 255 - alpha;
+                  pixels[to] = Math.round((block[from] * alpha + pixels[to] * inverse) / 255);
+                  pixels[to + 1] = Math.round((block[from + 1] * alpha + pixels[to + 1] * inverse) / 255);
+                  pixels[to + 2] = Math.round((block[from + 2] * alpha + pixels[to + 2] * inverse) / 255);
+                }
+              }
+            }
+          }
+        }
+      }
+      return {width, height, pixels};
     }
 
     const roomEdits = new Map();
@@ -532,7 +715,7 @@
     }
 
     return {
-      areas, stats, getEntities, getTemplates, addEntity, updateEntity, removeEntity, updateStat, build,
+      areas, stats, getEntities, getTemplates, renderRoomArt, addEntity, updateEntity, removeEntity, updateStat, build,
       undo() { history.pop()?.(); },
       get canUndo() { return history.length > 0; },
       get changeCount() { return roomEdits.size + statEdits.size; },

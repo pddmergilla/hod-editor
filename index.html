@@ -96,7 +96,10 @@
             <div class="map-card">
               <div class="map-card-top">
                 <span class="map-legend"><i class="legend-dot enemy"></i>Enemy <i class="legend-dot object"></i>Object <i class="legend-dot pickup"></i>Pickup</span>
-                <span class="map-coordinates" id="map-size">— × — PX</span>
+                <div class="map-card-tools">
+                  <label class="collision-control" for="collision-toggle"><input id="collision-toggle" type="checkbox"><span>Collision</span></label>
+                  <span class="map-coordinates" id="map-size">— × — PX</span>
+                </div>
               </div>
               <div class="map-viewport" id="map-viewport">
                 <div class="map-empty">
