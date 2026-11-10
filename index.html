@@ -59,104 +59,134 @@
 
       <section class="panel map-panel is-visible" id="map-panel" role="tabpanel" aria-labelledby="map-tab">
         <div class="map-layout">
-          <aside class="room-sidebar" aria-label="Room browser">
-            <div class="section-heading">
-              <div><p class="eyebrow">FIELD GUIDE</p><h1>Map Editor</h1></div>
-              <span class="heading-seal" aria-hidden="true">⌖</span>
-            </div>
-            <div class="castle-switch" role="group" aria-label="Choose castle">
-              <button type="button" class="castle-button is-selected" data-castle="A" aria-pressed="true">Castle A</button>
-              <button type="button" class="castle-button" data-castle="B" aria-pressed="false">Castle B</button>
-              <button type="button" class="castle-button" data-castle="Other" aria-pressed="false">Other</button>
-            </div>
-            <label class="search-box">
-              <span class="search-glyph" aria-hidden="true">⌕</span>
-              <span class="sr-only">Search rooms</span>
-              <input id="room-search" type="search" placeholder="Search rooms…" autocomplete="off">
-              <kbd>/</kbd>
-            </label>
-            <div class="list-caption"><span>ROOM INDEX</span><span id="room-count">—</span></div>
-            <div class="room-list" id="room-list" aria-live="polite">
-              <div class="list-empty"><span class="empty-ornament">✦</span><strong>Waiting for a record</strong><span>Load a ROM to reveal its rooms.</span></div>
-            </div>
+          <aside class="room-sidebar" aria-label="Area and room browser">
+            <section class="area-section">
+              <h2>Area</h2>
+              <label class="area-select-label"><span class="sr-only">Area</span><select id="area-select" disabled><option value="">Load a ROM first</option></select></label>
+              <div class="area-note" id="area-name">Choose an area to browse its rooms.</div>
+            </section>
+            <section class="rooms-section" aria-label="Rooms">
+              <h2>Rooms <span class="sidebar-count" id="room-count">—</span></h2>
+              <label class="search-box">
+                <span class="search-glyph" aria-hidden="true">⌕</span>
+                <span class="sr-only">Search rooms</span>
+                <input id="room-search" type="search" placeholder="Search rooms…" autocomplete="off">
+                <kbd>/</kbd>
+              </label>
+              <div class="room-list" id="room-list" aria-live="polite">
+                <div class="list-empty"><span class="empty-ornament">✦</span><strong>Waiting for a record</strong><span>Load a ROM to reveal its rooms.</span></div>
+              </div>
+            </section>
+            <section class="display-section" aria-label="Display">
+              <h2>Display</h2>
+              <label><input type="checkbox" id="show-entities" checked disabled> Entities</label>
+              <label class="collision-control" for="collision-toggle"><input id="collision-toggle" type="checkbox" disabled><span>Collision</span></label>
+            </section>
           </aside>
 
-          <div class="map-workspace">
+          <section class="map-workspace" aria-label="Room map">
             <div class="room-toolbar">
-              <div class="room-title-block">
-                <p class="eyebrow" id="room-breadcrumb">MAP ARCHIVE <span>·</span> CASTLE A</p>
-                <h2 id="room-title">Choose a room</h2>
-                <p class="room-subtitle" id="room-subtitle">Your map will appear here after a ROM is loaded.</p>
+              <div class="map-room-info">
+                <span class="room-breadcrumb" id="room-breadcrumb">MAP ARCHIVE · CASTLE A</span>
+                <strong id="room-title">Choose a room</strong>
+                <small id="room-subtitle">Your map will appear here after a ROM is loaded.</small>
               </div>
-              <button class="button button-outline move-toggle" id="move-toggle" type="button" aria-pressed="false" disabled>
-                <span aria-hidden="true">↗</span><span>Move mode</span>
-              </button>
-            </div>
-
-            <div class="map-card">
-              <div class="map-card-top">
-                <span class="map-legend"><i class="legend-dot enemy"></i>Enemy <i class="legend-dot object"></i>Object <i class="legend-dot pickup"></i>Pickup</span>
-                <div class="map-card-tools">
-                  <label class="collision-control" for="collision-toggle"><input id="collision-toggle" type="checkbox"><span>Collision</span></label>
-                  <span class="map-coordinates" id="map-size">— × — PX</span>
-                </div>
-              </div>
-              <div class="map-viewport" id="map-viewport">
-                <div class="map-empty">
-                  <div class="empty-crest" aria-hidden="true"><span>✦</span></div>
-                  <strong>The map is sleeping</strong>
-                  <span>Choose a room to see its layout and markers.</span>
-                </div>
-              </div>
-              <div class="map-card-bottom">
-                <span id="map-hint">Select a room from the index.</span>
-                <span class="map-key"><kbd>Click</kbd> marker to inspect</span>
+              <div class="zoom-tools" role="group" aria-label="Map view controls">
+                <button id="scroll-up" type="button" title="Scroll map up" aria-label="Scroll map up" disabled>↑</button>
+                <button id="scroll-down" type="button" title="Scroll map down" aria-label="Scroll map down" disabled>↓</button>
+                <button id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out" disabled>−</button>
+                <span id="zoom-label" aria-live="polite">100%</span>
+                <button id="zoom-in" type="button" title="Zoom in" aria-label="Zoom in" disabled>+</button>
               </div>
             </div>
+            <div class="map-viewport" id="map-viewport">
+              <div class="map-empty">
+                <div class="empty-crest" aria-hidden="true"><span>✦</span></div>
+                <strong>The map is sleeping</strong>
+                <span>Choose a room to see its layout and markers.</span>
+              </div>
+            </div>
+            <div class="map-status">
+              <span id="map-hint">Select a room from the index.</span>
+              <span class="map-coordinates" id="map-size">— × — PX</span>
+            </div>
+          </section>
 
-            <section class="entity-panel" aria-labelledby="entity-heading">
-              <div class="entity-panel-heading">
-                <div><p class="eyebrow">ROOM CONTENTS</p><h3 id="entity-heading">Entity workshop</h3></div>
-                <span class="entity-count" id="entity-count">0 MARKERS</span>
+          <aside class="entity-sidebar" aria-label="Room entities">
+            <section class="entity-section">
+              <h2>Entities <span id="entity-count">0 markers</span></h2>
+              <div class="entity-panel-heading"><strong id="entity-room-title">No room selected</strong></div>
+              <div class="entity-list" id="entity-list" role="listbox" aria-label="Current room entities">
+                <p class="muted-note">Choose a room to inspect its contents.</p>
               </div>
-              <div class="entity-columns">
-                <div class="entity-list-wrap">
-                  <div class="subsection-label">PLACED MARKERS</div>
-                  <div class="entity-list" id="entity-list">
-                    <p class="muted-note">Choose a room to inspect its contents.</p>
+
+              <div class="selected-controls">
+                <div class="subsection-label">SELECTED ENTITY</div>
+                <p class="selected-name" id="selected-name">Nothing selected</p>
+                <label class="field-label" for="edit-type">Type</label>
+                <select id="edit-type" disabled><option value="">Choose an entity</option></select>
+                <div class="entity-kind-fields" id="edit-enemy-wrap" hidden>
+                  <label class="field-label" for="edit-enemy">Enemy</label>
+                  <select id="edit-enemy" disabled></select>
+                  <div class="variant-choice" id="edit-enemy-variant-wrap" hidden>
+                    <label class="field-label" for="edit-enemy-variant">Enemy variant</label>
+                    <select id="edit-enemy-variant" disabled></select>
                   </div>
                 </div>
-                <div class="entity-controls">
-                  <div class="subsection-label">ADD AN ENTITY</div>
-                  <label class="field-label" for="add-template">Template</label>
-                  <select id="add-template" disabled><option value="">Choose a room first</option></select>
-                  <div class="coordinate-fields">
-                    <label><span class="field-label">X</span><input id="add-x" type="number" inputmode="numeric" value="32" min="-32768" max="32767" disabled></label>
-                    <label><span class="field-label">Y</span><input id="add-y" type="number" inputmode="numeric" value="32" min="-32768" max="32767" disabled></label>
-                  </div>
-                  <button class="button button-primary button-wide" id="add-entity" type="button" disabled>Add to room <span aria-hidden="true">＋</span></button>
+                <div class="entity-kind-fields" id="edit-pickup-wrap" hidden>
+                  <label class="field-label" for="edit-pickup">Item</label>
+                  <select id="edit-pickup" disabled></select>
                 </div>
-                <div class="entity-controls selected-controls">
-                  <div class="subsection-label">SELECTED MARKER</div>
-                  <p class="selected-name" id="selected-name">Nothing selected</p>
-                  <div class="coordinate-fields">
-                    <label><span class="field-label">X</span><input id="edit-x" type="number" inputmode="numeric" min="-32768" max="32767" disabled></label>
-                    <label><span class="field-label">Y</span><input id="edit-y" type="number" inputmode="numeric" min="-32768" max="32767" disabled></label>
-                  </div>
-                  <label class="field-label" for="replace-template">Replace with template <span class="optional-label">OPTIONAL</span></label>
-                  <select id="replace-template" disabled><option value="">Keep current type</option></select>
-                  <div class="button-pair">
-                    <button class="button button-outline button-grow" id="apply-entity" type="button" disabled>Apply</button>
-                    <button class="button button-danger" id="remove-entity" type="button" disabled>Remove</button>
-                  </div>
+                <div class="entity-kind-fields" id="edit-breakable-wrap" hidden>
+                  <label class="field-label" for="edit-appearance">Appearance</label>
+                  <select id="edit-appearance" disabled></select>
+                  <label class="field-label" for="edit-content">Contents</label>
+                  <select id="edit-content" disabled></select>
                 </div>
+                <div class="coordinate-fields">
+                  <label><span class="field-label">Room-local X</span><input id="edit-x" type="number" inputmode="numeric" min="-32768" max="32767" disabled></label>
+                  <label><span class="field-label">Room-local Y</span><input id="edit-y" type="number" inputmode="numeric" min="-32768" max="32767" disabled></label>
+                </div>
+                <button class="button button-primary button-wide" id="apply-entity" type="button" disabled>Apply Changes</button>
               </div>
-              <p class="entity-tip"><span aria-hidden="true">✦</span> Turn on Move mode, then click a point on the map to place the selected marker.</p>
+
+              <div class="add-controls">
+                <div class="subsection-label">ADD AN ENTITY</div>
+                <label class="field-label" for="add-type">Type</label>
+                <select id="add-type" disabled><option value="">Choose a room first</option></select>
+                <div class="entity-kind-fields" id="add-enemy-wrap" hidden>
+                  <label class="field-label" for="add-enemy">Enemy</label>
+                  <select id="add-enemy" disabled></select>
+                  <div class="variant-choice" id="add-enemy-variant-wrap" hidden>
+                    <label class="field-label" for="add-enemy-variant">Enemy variant</label>
+                    <select id="add-enemy-variant" disabled></select>
+                  </div>
+                </div>
+                <div class="entity-kind-fields" id="add-pickup-wrap" hidden>
+                  <label class="field-label" for="add-pickup">Item</label>
+                  <select id="add-pickup" disabled></select>
+                </div>
+                <div class="entity-kind-fields" id="add-breakable-wrap" hidden>
+                  <label class="field-label" for="add-appearance">Appearance</label>
+                  <select id="add-appearance" disabled></select>
+                  <label class="field-label" for="add-content">Contents</label>
+                  <select id="add-content" disabled></select>
+                </div>
+                <div class="coordinate-fields">
+                  <label><span class="field-label">Room-local X</span><input id="add-x" type="number" inputmode="numeric" value="32" min="0" max="32767" disabled></label>
+                  <label><span class="field-label">Room-local Y</span><input id="add-y" type="number" inputmode="numeric" value="32" min="0" max="32767" disabled></label>
+                </div>
+                <div class="rowbuttons">
+                  <button class="button button-primary" id="add-entity" type="button" disabled>Add</button>
+                  <button class="button button-outline" id="duplicate-entity" type="button" disabled>Duplicate</button>
+                  <button class="button button-danger" id="remove-entity" type="button" disabled>Delete</button>
+                </div>
+                <p class="capacityHint" id="entity-capacity-hint">Choose a room to inspect its entity slots.</p>
+              </div>
             </section>
-          </div>
+          </aside>
         </div>
       </section>
-
       <section class="panel stats-panel" id="stats-panel" role="tabpanel" aria-labelledby="stats-tab" hidden>
         <div class="stats-heading">
           <div class="section-heading">

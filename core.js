@@ -224,12 +224,40 @@
     itemNames.set('9/1', 'Heart Max Up');
     const pickupName = (subtype, item) => itemNames.get(subtype + '/' + item) || 'Pickup $' + hex(subtype) + '/' + hex(item);
     const enemyName = id => enemyNames[id % 125] || 'Enemy $' + hex(id);
-    const label = ({type, subtype, varB}) => {
+    const candleAppearanceNames = new Map([
+      [0x0000, 'Candle'],
+      [0x1000, 'Small golden candle'],
+      [0x2000, 'Candle · palette 2'],
+      [0x3000, 'Candle · palette 3'],
+      [0x0010, 'Green pedestal torch'],
+      [0x0011, 'Brass candle stand'],
+      [0x0012, 'Gold twin candle stand'],
+      [0x0013, 'Blue lantern stand'],
+      [0x0014, 'Green lantern stand'],
+      [0x0015, 'Tripod brazier'],
+      [0x0016, 'Statue torch'],
+      [0x0017, 'Blue candelabra'],
+      [0x0018, 'Tall blue-flame candle stand'],
+    ]);
+    const breakableRewards = [
+      {subtype: 0, varB: 0, label: 'Small heart'},
+      {subtype: 0, varB: 1, label: 'Large heart'},
+      {subtype: 1, varB: 0, label: 'Money · 0'},
+      {subtype: 1, varB: 1, label: 'Money · 1'},
+      ...['Holy Book', 'Cross', 'Axe', 'Holy Water', 'Sacred Fist', 'Knife']
+        .map((label, varB) => ({subtype: 2, varB, label})),
+      ...Array.from({length: 27}, (_, varB) => {
+        const label = itemNames.get('3/' + varB);
+        return label ? {subtype: 3, varB, label} : null;
+      }).filter(Boolean),
+    ];
+    const label = ({type, subtype, varA, varB}) => {
       if (type === ENEMY) return enemyName(subtype);
       if (type === PICKUP) return pickupName(subtype, varB);
       if (type === CANDLE) {
-        const contents = ['Heart', 'Money', ['Holy Book', 'Cross', 'Axe', 'Holy Water', 'Sacred Fist', 'Knife'][varB]][subtype];
-        return contents ? contents + ' candle' : 'Candle $' + hex(subtype);
+        const appearance = candleAppearanceNames.get(varA) || 'Breakable $' + hex(varA);
+        const reward = breakableRewards.find(option => option.subtype === subtype && option.varB === varB);
+        return reward ? appearance + ' · ' + reward.label : appearance;
       }
       return profile.objects[subtype] || 'Object $' + hex(subtype);
     };
@@ -435,6 +463,7 @@
     const fixedPickupFlags = new Set();
     const donors = new Map();
     const pickupTemplates = new Map();
+    const enemySubtypes = new Set(enemyNames.flatMap((name, subtype) => name.startsWith('Enemy $') ? [] : [subtype]));
     const roomTemplates = new Map();
 
     function templateId(entity) {
@@ -449,6 +478,7 @@
           continue;
         }
         if (entity.type !== ENEMY && entity.type !== CANDLE) continue;
+        if (entity.type === ENEMY) enemySubtypes.add(entity.subtype);
         const id = templateId(entity);
         if (!donors.has(id)) donors.set(id, {id, ...entity, rooms: []});
         if (!donors.get(id).rooms.includes(room)) donors.get(id).rooms.push(room);
@@ -504,6 +534,36 @@
       })).sort((a, b) => a.type - b.type || a.label.localeCompare(b.label));
     }
 
+    function getEnemyOptions(id) {
+      const templates = [...templatesFor(id).values()].filter(template => template.type === ENEMY);
+      const bySubtype = new Map();
+      for (const template of templates) {
+        if (!bySubtype.has(template.subtype)) bySubtype.set(template.subtype, []);
+        bySubtype.get(template.subtype).push(template);
+      }
+      return [...enemySubtypes].sort((a, b) => a - b).map(subtype => {
+        const name = enemyNames[subtype];
+        const variants = bySubtype.get(subtype) || [];
+        const choices = variants.map((template, index) => ({
+          id: template.id,
+          label: variants.length > 1 ? 'Variant ' + (index + 1) : template.label,
+        }));
+        return {subtype, label: name || 'Enemy $' + hex(subtype), available: choices.length > 0, variants: choices};
+      });
+    }
+
+    function breakableAppearances(id) {
+      const compatible = new Set([...templatesFor(id).values()]
+        .filter(template => template.type === CANDLE)
+        .map(template => template.varA));
+      return [...candleAppearanceNames].filter(([value]) => (value & 0x0fff) === 0 || compatible.has(value))
+        .map(([value, label]) => ({value, label}));
+    }
+
+    function getBreakableOptions(id) {
+      return {appearances: breakableAppearances(id), rewards: breakableRewards.map(reward => ({...reward}))};
+    }
+
     function getEntities(id) {
       return roomEdits.get(id) || roomById(id).entities;
     }
@@ -555,15 +615,53 @@
       integer(y, -32768, 32767, 'Y');
     }
 
-    function addEntity(id, template, x, y) {
+    function insertEntity(id, template, x, y) {
       coordinates(x, y);
       const rows = getEntities(id);
       check(rows.length < MAX_ENTITIES, 'This room is at the 31-entity limit.');
       const used = new Set(rows.map(entity => entity.slot));
       let slot = 0;
       while (used.has(slot)) slot++;
-      editRoom(id, [...rows, place(getTemplate(id, template), slot, x, y)]);
+      editRoom(id, [...rows, place(template, slot, x, y)]);
       return rows.length;
+    }
+
+    function addEntity(id, template, x, y) {
+      return insertEntity(id, getTemplate(id, template), x, y);
+    }
+
+    function typedTemplate(id, values, current) {
+      const type = Number(values.type);
+      if (type === ENEMY || type === PICKUP) {
+        const template = getTemplate(id, values.templateId);
+        check(template.type === type, 'Choose a compatible template for this type.');
+        return template;
+      }
+      if (type === OBJECT && current?.type === OBJECT) return current;
+      check(type === CANDLE, 'Choose Enemy, Breakable, or Item Pickup.');
+
+      const appearance = Number(values.appearance);
+      const subtype = Number(values.subtype);
+      const varB = Number(values.varB);
+      const oldBreakable = current?.type === CANDLE ? current : null;
+      check(oldBreakable?.varA === appearance || breakableAppearances(id).some(option => option.value === appearance),
+        'This breakable appearance is not available in the room.');
+      check((oldBreakable?.subtype === subtype && oldBreakable.varB === varB) ||
+        breakableRewards.some(reward => reward.subtype === subtype && reward.varB === varB),
+        'Choose a supported breakable reward.');
+      const donor = oldBreakable || [...templatesFor(id).values()].find(template =>
+        template.type === CANDLE && template.varA === appearance);
+      return {type, subtype, up: donor?.up ?? 0, extra: donor?.extra ?? 0, varA: appearance, varB};
+    }
+
+    function addTypedEntity(id, values, x, y) {
+      return insertEntity(id, typedTemplate(id, values), x, y);
+    }
+
+    function duplicateEntity(id, index, x, y) {
+      const current = getEntities(id)[index];
+      check(current, 'Select an entity first.');
+      return insertEntity(id, current, x, y);
     }
 
     function updateEntity(id, index, values) {
@@ -572,9 +670,10 @@
       check(current, 'Select an entity first.');
       const {x = current.x, y = current.y, templateId: nextId} = values;
       coordinates(x, y);
-      const changed = nextId && nextId !== templateId(current)
-        ? place(getTemplate(id, nextId), current.slot, x, y, current)
-        : {...current, x, y};
+      let template = current;
+      if (values.type !== undefined) template = typedTemplate(id, values, current);
+      else if (nextId && nextId !== templateId(current)) template = getTemplate(id, nextId);
+      const changed = place(template, current.slot, x, y, current);
       if (!sameEntity(changed, current)) {
         rows[index] = changed;
         editRoom(id, rows);
@@ -715,7 +814,8 @@
     }
 
     return {
-      areas, stats, getEntities, getTemplates, renderRoomArt, addEntity, updateEntity, removeEntity, updateStat, build,
+      areas, stats, getEntities, getTemplates, getEnemyOptions, getBreakableOptions, renderRoomArt,
+      addEntity, addTypedEntity, duplicateEntity, updateEntity, updateTypedEntity: updateEntity, removeEntity, updateStat, build,
       undo() { history.pop()?.(); },
       get canUndo() { return history.length > 0; },
       get changeCount() { return roomEdits.size + statEdits.size; },
