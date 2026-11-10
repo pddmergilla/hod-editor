@@ -61,6 +61,8 @@
     duplicateEntity: byId("duplicate-entity"),
     removeEntity: byId("remove-entity"),
     capacityHint: byId("entity-capacity-hint"),
+    enemyBankPanel: byId("enemy-bank-panel"),
+    enemyBankRows: byId("enemy-bank-rows"),
     statsSearch: byId("stats-search"),
     statsCount: byId("stats-count"),
     statsList: byId("stats-list"),
@@ -628,6 +630,76 @@
     ui.capacityHint.textContent = room
       ? (31 - entities.length) + " of 31 entity slots available."
       : "Choose a room to inspect its entity slots.";
+    renderEnemyBank(room);
+  }
+  function renderEnemyBank(room) {
+    ui.enemyBankPanel.hidden = true;
+    ui.enemyBankRows.innerHTML = "";
+    if (!room || !state.model || typeof state.model.getEnemyBank !== "function") return;
+    let rows;
+    try {
+      rows = state.model.getEnemyBank(room.id);
+    } catch (error) {
+      showNotice(error.message || "Could not read the enemy bank.", "error");
+      return;
+    }
+    if (!Array.isArray(rows) || !rows.length) return;
+    const sortedRows = rows.slice().sort((a, b) =>
+      String(a.label || "").localeCompare(String(b.label || ""), undefined, {sensitivity: "base", numeric: true}) ||
+      Number(a.subtype) - Number(b.subtype));
+    ui.enemyBankRows.innerHTML = sortedRows.map(row => {
+      const sourceSubtype = Number(row.subtype);
+      const sourceLabel = String(row.label || ("Enemy " + sourceSubtype));
+      const choices = (Array.isArray(row.choices) ? row.choices : []).slice().sort((a, b) =>
+        String(a.label || "").localeCompare(String(b.label || ""), undefined, {sensitivity: "base", numeric: true}) ||
+        Number(a.subtype) - Number(b.subtype));
+      const options = choices.map(choice => {
+        const targetSubtype = Number(choice.subtype);
+        const label = String(choice.label || ("Enemy " + targetSubtype));
+        const reason = choice.reason ? " · " + String(choice.reason) : "";
+        return '<option value="' + targetSubtype + '"' +
+          (targetSubtype === sourceSubtype ? " selected" : "") +
+          (choice.available ? "" : " disabled") +
+          (choice.reason ? ' title="' + escapeHtml(choice.reason) + '"' : "") + '>' +
+          escapeHtml(label + reason) + '</option>';
+      }).join("");
+      return '<label class="enemy-bank-row"><span class="enemy-bank-label">' + escapeHtml(sourceLabel) + '</span>' +
+        '<select data-source-subtype="' + sourceSubtype + '" aria-label="Replace every ' + escapeHtml(sourceLabel) + ' in this room with">' +
+        options + '</select></label>';
+    }).join("");
+    ui.enemyBankPanel.hidden = !ui.enemyBankRows.childElementCount;
+  }
+  function resetEnemyAddDraft(room) {
+    if (state.addDraft && String(state.addDraft.type) === "0") {
+      state.addDraft = draftFor(room, "0", null);
+    }
+  }
+  function swapEnemyBank(select) {
+    const room = currentRoom();
+    if (!room || !select) return;
+    const sourceSubtype = Number(select.dataset.sourceSubtype);
+    const targetSubtype = Number(select.value);
+    if (!Number.isInteger(sourceSubtype) || !Number.isInteger(targetSubtype) || sourceSubtype === targetSubtype) return;
+    try {
+      const sourceRow = state.model.getEnemyBank(room.id).find(row => Number(row.subtype) === sourceSubtype);
+      const sourceLabel = sourceRow && sourceRow.label ? sourceRow.label : "this enemy";
+      const choice = sourceRow && Array.isArray(sourceRow.choices)
+        ? sourceRow.choices.find(row => Number(row.subtype) === targetSubtype)
+        : null;
+      const targetLabel = choice && choice.label ? choice.label : "the selected enemy";
+      state.model.swapEnemyBank(room.id, sourceSubtype, targetSubtype);
+      state.editDraftKey = "";
+      resetEnemyAddDraft(room);
+      updateChrome();
+      renderRoomList();
+      renderMapWorkspace();
+      const nextSelect = ui.enemyBankRows.querySelector('[data-source-subtype="' + targetSubtype + '"]');
+      if (nextSelect) nextSelect.focus();
+      showNotice("Replaced every " + sourceLabel + " in this room with " + targetLabel + ".", "success");
+    } catch (error) {
+      renderMapWorkspace();
+      showNotice(error.message || "Could not swap this enemy bank slot.", "error");
+    }
   }
   function setZoom(value) {
     const zoom = Math.max(25, Math.min(400, Math.round(value / 25) * 25));
@@ -1149,6 +1221,10 @@
     const button = event.target.closest("[data-index]");
     if (button) selectEntity(Number(button.dataset.index));
   });
+  ui.enemyBankRows.addEventListener("change", event => {
+    const select = event.target.closest("[data-source-subtype]");
+    if (select) swapEnemyBank(select);
+  });
   ui.showEntities.addEventListener("change", () => {
     state.showEntities = ui.showEntities.checked;
     renderMapWorkspace();
@@ -1194,6 +1270,7 @@
       state.model.undo();
       state.entityIndex = null;
       state.editDraftKey = "";
+      resetEnemyAddDraft(currentRoom());
       updateChrome();
       renderMap();
       renderStats();

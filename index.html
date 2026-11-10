@@ -148,6 +148,11 @@
                   <label><span class="field-label">Room-local Y</span><input id="edit-y" type="number" inputmode="numeric" min="-32768" max="32767" disabled></label>
                 </div>
                 <button class="button button-primary button-wide" id="apply-entity" type="button" disabled>Apply Changes</button>
+                <section class="enemy-bank-panel" id="enemy-bank-panel" aria-label="Enemy bank" hidden>
+                  <div class="enemy-bank-heading"><span class="subsection-label">ENEMY BANK</span><span class="enemy-bank-scope">ROOM WIDE</span></div>
+                  <p class="enemy-bank-note">Each choice replaces every copy of that enemy in this room. Use Undo to reverse it.</p>
+                  <div class="enemy-bank-rows" id="enemy-bank-rows"></div>
+                </section>
               </div>
 
               <div class="add-controls">

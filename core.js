@@ -9,12 +9,16 @@
   const MAX_ENTITIES = 31;
   const SCREEN = 256;
   const FOOTER = new TextEncoder().encode('HOD-EDITOR-EXPORT-01');
+  const BANK_MARKER = new TextEncoder().encode('HOD-ENEMY-BANK-01');
   const ENEMY = 0;
   const OBJECT = 1;
   const CANDLE = 2;
   const PICKUP = 3;
   const SIGNATURES = [[0x1ec8, 0x08494d48], [0x3bc0, 0x08498d40]];
   const hex = (number, width = 2) => number.toString(16).toUpperCase().padStart(width, '0');
+  const enemyBankEnemies = profile.enemyBankEnemies;
+  const isBankSubtype = subtype => Number.isInteger(subtype) && subtype >= 0 && subtype <= 255 &&
+    Object.prototype.hasOwnProperty.call(enemyBankEnemies, String(subtype)) && !profile.bosses.includes(subtype);
 
   function check(condition, message) {
     if (!condition) throw new Error(message);
@@ -47,11 +51,33 @@
       FOOTER.every((byte, index) => bytes[bytes.length - FOOTER.length + index] === byte);
   }
 
+  function bankTrailer(bytes) {
+    const end = bytes.length - FOOTER.length;
+    const markerAt = end - BANK_MARKER.length;
+    if (markerAt < 4 || !BANK_MARKER.every((byte, index) => bytes[markerAt + index] === byte)) {
+      return {end, rooms: null};
+    }
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const size = view.getUint32(markerAt - 4, true);
+    const start = markerAt - 4 - size;
+    check(size > 0 && start >= profile.size, 'The enemy bank data in this export is damaged.');
+    let data;
+    try {
+      data = JSON.parse(new TextDecoder().decode(bytes.subarray(start, markerAt - 4)));
+    } catch (error) {
+      throw new Error('The enemy bank data in this export is damaged.');
+    }
+    check(data && data.version === 1 && data.rooms && typeof data.rooms === 'object' && !Array.isArray(data.rooms),
+      'The enemy bank data in this export is not supported.');
+    return {end: start, rooms: data.rooms};
+  }
+
   async function open(input) {
     check(input instanceof Uint8Array && input.length >= profile.size && input.length <= LIMIT,
       'Choose the supported modded Harmony of Dissonance GBA ROM or an editor export.');
     const fromEditor = hasFooter(input);
-    const bytes = new Uint8Array(input.subarray(0, fromEditor ? input.length - FOOTER.length : input.length));
+    const trailer = fromEditor ? bankTrailer(input) : {end: input.length, rooms: null};
+    const bytes = new Uint8Array(input.subarray(0, trailer.end));
     const read = reader(bytes);
     const title = new TextDecoder().decode(bytes.subarray(0xa0, 0xb0));
     check(title === profile.title && SIGNATURES.every(([at, value]) => read.word(at) === value),
@@ -63,7 +89,7 @@
       const actual = Array.from(hash, n => n.toString(16).padStart(2, '0')).join('');
       check(profile.supportedHashes.includes(actual), 'This ROM differs from the supported modded base.');
     }
-    return createModel(bytes, read);
+    return createModel(bytes, read, trailer.rooms);
   }
 
   function textReader(read) {
@@ -115,12 +141,13 @@
       .map(entity => ({...entity, label: label(entity)}));
     const gfx = readList(read, read.word(at + 16), 4, pos => !read.word(pos), 40)
       .map(pos => read.word(pos));
-    const palettes = readList(read, read.word(at + 20), 8, pos => !read.word(pos + 4), 16)
-      .filter(pos => read.half(pos) === 1)
-      .map(pos => read.word(pos) + '/' + read.word(pos + 4));
+    const paletteEntries = readList(read, read.word(at + 20), 8, pos => !read.word(pos + 4), 16)
+      .map(pos => [read.word(pos), read.word(pos + 4)]);
+    const palettes = paletteEntries.filter(([header]) => (header & 0xffff) === 1)
+      .map(([header, pointer]) => header + '/' + pointer);
 
     return {
-      id: hex(at, 6), name, at, layer, width, height, entities, gfx, palettes,
+      id: hex(at, 6), name, at, layer, width, height, entities, gfx, palettes, paletteEntries, flags,
       x: (flags >>> 16) & 127, y: (flags >>> 23) & 127,
       pixelWidth: width * SCREEN, pixelHeight: height * SCREEN,
     };
@@ -208,7 +235,7 @@
     return {width, height, tiles};
   }
 
-  function createModel(bytes, read) {
+  function createModel(bytes, read, savedBankRooms) {
     const getText = textReader(read);
     const enemyNames = Array.from({length: 125}, (_, index) => {
       const name = getText(0x1cc + index);
@@ -224,6 +251,16 @@
     itemNames.set('9/1', 'Heart Max Up');
     const pickupName = (subtype, item) => itemNames.get(subtype + '/' + item) || 'Pickup $' + hex(subtype) + '/' + hex(item);
     const enemyName = id => enemyNames[id % 125] || 'Enemy $' + hex(id);
+    const bankSubtypes = Object.keys(enemyBankEnemies).map(Number).filter(isBankSubtype);
+    const bankNameCounts = new Map();
+    for (const subtype of bankSubtypes) {
+      const name = enemyName(subtype);
+      bankNameCounts.set(name, (bankNameCounts.get(name) || 0) + 1);
+    }
+    const bankEnemyLabel = subtype => {
+      const name = enemyName(subtype);
+      return bankNameCounts.get(name) > 1 ? name + ' · $' + hex(subtype) : name;
+    };
     const candleAppearanceNames = new Map([
       [0x0000, 'Candle'],
       [0x1000, 'Small golden candle'],
@@ -263,6 +300,17 @@
     };
     const rooms = new Map();
     const areas = parseAreas(read, label, rooms);
+    const savedBanks = new Map();
+    for (const [id, values] of Object.entries(savedBankRooms || {})) {
+      const room = rooms.get(id);
+      check(room && Array.isArray(values) && values.length && values.every(isBankSubtype),
+        'The enemy bank data contains an unsupported room or enemy.');
+      const selected = new Set(values);
+      check(selected.size === values.length && room.entities.every(entity =>
+        entity.type !== ENEMY || !isBankSubtype(entity.subtype) || selected.has(entity.subtype)),
+      'The enemy bank data does not match this room.');
+      savedBanks.set(id, selected);
+    }
     const compressedCache = new Map();
     for (const area of areas) {
       for (const room of area.rooms) {
@@ -457,6 +505,8 @@
     }
 
     const roomEdits = new Map();
+    const roomResourceEdits = new Map();
+    const bankEdits = new Map();
     const statEdits = new Map();
     const fields = new Map();
     const history = [];
@@ -498,7 +548,7 @@
       return room;
     }
 
-    function templatesFor(id) {
+    function baseTemplatesFor(id) {
       if (!roomTemplates.has(id)) {
         const room = roomById(id);
         const local = new Map();
@@ -517,6 +567,49 @@
         roomTemplates.set(id, local);
       }
       return roomTemplates.get(id);
+    }
+
+    function customBankFor(id) {
+      return bankEdits.get(id) || savedBanks.get(id);
+    }
+
+    function originalBankFor(id) {
+      return savedBanks.get(id) || new Set([...baseTemplatesFor(id).values()]
+        .filter(template => template.type === ENEMY && isBankSubtype(template.subtype))
+        .map(template => template.subtype));
+    }
+
+    function templatesFor(id) {
+      const templates = baseTemplatesFor(id);
+      const active = customBankFor(id);
+      if (!active) return templates;
+      const resources = roomResourceEdits.get(id) || roomById(id);
+      const currentGfx = resources.gfx;
+      const currentPalettes = resources.paletteEntries.map(([header, pointer]) => header + '/' + pointer);
+      const localIds = new Set(roomById(id).entities
+        .filter(entity => entity.type === ENEMY || entity.type === CANDLE)
+        .map(templateId));
+      const selected = new Map();
+      for (const [templateKey, template] of templates) {
+        const bankEnemy = template.type === ENEMY && isBankSubtype(template.subtype);
+        if (bankEnemy && !active.has(template.subtype)) continue;
+        if (localIds.has(templateKey)) {
+          selected.set(templateKey, template);
+          continue;
+        }
+        const matchesResources = !template.rooms || template.rooms.some(other =>
+          other.gfx.every(gfx => currentGfx.includes(gfx)) &&
+          other.palettes.every(palette => currentPalettes.includes(palette)));
+        if (matchesResources) selected.set(templateKey, template);
+      }
+      for (const subtype of active) {
+        const entity = bankTemplate(subtype);
+        const templateKey = templateId(entity);
+        if (!selected.has(templateKey)) {
+          selected.set(templateKey, {...entity, id: templateKey, label: label(entity)});
+        }
+      }
+      return selected;
     }
 
     function getTemplates(id) {
@@ -550,6 +643,43 @@
         }));
         return {subtype, label: name || 'Enemy $' + hex(subtype), available: choices.length > 0, variants: choices};
       });
+    }
+
+    function bankPlan(room, newBank, rows) {
+      return profile.planEnemyBank(room, [...originalBankFor(room.id)], [...newBank], rows, read);
+    }
+
+    function bankTemplate(subtype) {
+      return {type: ENEMY, subtype, up: 0, extra: 0, varA: enemyBankEnemies[subtype].varA ?? 0, varB: 0};
+    }
+
+    function bankSwap(room, rows, selected, source, target) {
+      const nextBank = new Set(selected);
+      nextBank.delete(source);
+      nextBank.add(target);
+      const template = bankTemplate(target);
+      const nextRows = rows.map(entity => entity.type === ENEMY && entity.subtype === source
+        ? place(template, entity.slot, entity.x, entity.y)
+        : entity);
+      return {nextBank, nextRows, resources: bankPlan(room, nextBank, nextRows)};
+    }
+
+    function getEnemyBank(id) {
+      const room = roomById(id);
+      const rows = getEntities(id);
+      const selected = customBankFor(id) || originalBankFor(id);
+      return [...selected].sort((a, b) => a - b).map(source => ({
+        subtype: source,
+        label: bankEnemyLabel(source),
+        choices: bankSubtypes.map(target => {
+          const label = bankEnemyLabel(target);
+          if (target === source) return {subtype: target, label, available: true};
+          const reason = selected.has(target)
+            ? 'This enemy already has a bank slot.'
+            : bankSwap(room, rows, selected, source, target).resources.reason;
+          return {subtype: target, label, available: !reason, reason};
+        }),
+      }));
     }
 
     function breakableAppearances(id) {
@@ -593,16 +723,46 @@
       return {...entity, label: label(entity)};
     }
 
-    function editRoom(id, rows) {
+    function setRoomRows(id, rows) {
       const room = roomById(id);
-      const before = roomEdits.get(id);
-      history.push(() => before ? roomEdits.set(id, before) : roomEdits.delete(id));
-      if (rows.length === room.entities.length &&
-        rows.every((entity, i) => sameEntity(entity, room.entities[i]))) {
+      if (rows.length === room.entities.length && rows.every((entity, i) => sameEntity(entity, room.entities[i]))) {
         roomEdits.delete(id);
       } else {
         roomEdits.set(id, rows);
       }
+    }
+
+    function sameList(a, b) {
+      return a.length === b.length && a.every((value, index) => value === b[index]);
+    }
+
+    function samePalettes(a, b) {
+      return a.length === b.length && a.every((entry, index) => sameList(entry, b[index]));
+    }
+
+    function editRoom(id, rows, bank, resources) {
+      const room = roomById(id);
+      const selected = bank || customBankFor(id);
+      if (selected) {
+        resources ||= bankPlan(room, selected, rows);
+        check(!resources.reason, resources.reason);
+      }
+      const snapshots = [roomEdits, roomResourceEdits, bankEdits].map(edits => [edits, edits.get(id)]);
+      history.push(() => {
+        for (const [edits, before] of snapshots) {
+          if (before) edits.set(id, before);
+          else edits.delete(id);
+        }
+      });
+      setRoomRows(id, rows);
+      if (resources) {
+        if (sameList(resources.gfx, room.gfx) && samePalettes(resources.paletteEntries, room.paletteEntries)) {
+          roomResourceEdits.delete(id);
+        } else {
+          roomResourceEdits.set(id, resources);
+        }
+      }
+      if (bank) bankEdits.set(id, bank);
     }
 
     function sameEntity(a, b) {
@@ -685,6 +845,16 @@
       const rows = getEntities(id);
       check(rows[index], 'Select an entity first.');
       editRoom(id, rows.filter((_, i) => i !== index));
+    }
+
+    function swapEnemyBank(id, sourceSubtype, targetSubtype) {
+      const room = roomById(id);
+      const selected = customBankFor(id) || originalBankFor(id);
+      check(selected.has(sourceSubtype) && isBankSubtype(targetSubtype), 'Choose an enemy bank slot.');
+      check(sourceSubtype !== targetSubtype, 'Choose a different enemy for this slot.');
+      check(!selected.has(targetSubtype), 'This enemy already has a bank slot.');
+      const {nextBank, nextRows, resources} = bankSwap(room, getEntities(id), selected, sourceSubtype, targetSubtype);
+      editRoom(id, nextRows, nextBank, resources);
     }
 
     function field(id, label, at, format, min, max, note) {
@@ -772,9 +942,12 @@
     }
 
     function build() {
-      if (!roomEdits.size && !statEdits.size && bytes.length === profile.size) return bytes.slice();
+      const customBanks = new Map([...savedBanks, ...bankEdits]);
+      if (!roomEdits.size && !roomResourceEdits.size && !customBanks.size && !statEdits.size &&
+          bytes.length === profile.size) return bytes.slice();
       let end = (bytes.length + 3) & ~3;
       const entityLists = [];
+      const resourceLists = [];
       for (const [id, rows] of roomEdits) {
         const room = roomById(id);
         const axis = room.width < room.height ? 'y' : 'x';
@@ -782,10 +955,30 @@
         entityLists.push({room, sorted, start: end});
         end += (sorted.length + 1) * ENTITY_SIZE;
       }
-      check(end + FOOTER.length <= LIMIT, 'The edited ROM would exceed the GBA cartridge size limit.');
-      const output = new Uint8Array(end + FOOTER.length);
+      for (const [id, resources] of roomResourceEdits) {
+        const room = roomById(id);
+        const list = {room};
+        if (!sameList(resources.gfx, room.gfx)) {
+          list.gfxStart = end;
+          end += (resources.gfx.length + 1) * 4;
+        }
+        if (!samePalettes(resources.paletteEntries, room.paletteEntries)) {
+          list.paletteStart = end;
+          end += (resources.paletteEntries.length + 1) * 8;
+        }
+        if (list.gfxStart !== undefined || list.paletteStart !== undefined) resourceLists.push({room, resources, ...list});
+      }
+      const bankPayload = customBanks.size ? new TextEncoder().encode(JSON.stringify({
+        version: 1,
+        rooms: Object.fromEntries([...customBanks].sort(([a], [b]) => a.localeCompare(b))
+          .map(([id, subtypes]) => [id, [...subtypes].sort((a, b) => a - b)])),
+      })) : null;
+      const bankStart = end;
+      if (bankPayload) end += bankPayload.length + 4 + BANK_MARKER.length;
+      const footerAt = end;
+      check(footerAt + FOOTER.length <= LIMIT, 'The edited ROM would exceed the GBA cartridge size limit.');
+      const output = new Uint8Array(footerAt + FOOTER.length);
       output.set(bytes);
-      output.set(FOOTER, end);
       const view = new DataView(output.buffer);
       for (const {room, sorted, start} of entityLists) {
         view.setUint32(room.at + 24, ROM + start, true);
@@ -803,6 +996,22 @@
         }
         view.setUint32(at, 0x7fff7fff, true);
       }
+      for (const {room, resources, gfxStart, paletteStart} of resourceLists) {
+        if (gfxStart !== undefined) {
+          view.setUint32(room.at + 16, ROM + gfxStart, true);
+          resources.gfx.forEach((pointer, index) => view.setUint32(gfxStart + index * 4, pointer, true));
+          view.setUint32(gfxStart + resources.gfx.length * 4, 0, true);
+        }
+        if (paletteStart !== undefined) {
+          view.setUint32(room.at + 20, ROM + paletteStart, true);
+          resources.paletteEntries.forEach(([header, pointer], index) => {
+            view.setUint32(paletteStart + index * 8, header, true);
+            view.setUint32(paletteStart + index * 8 + 4, pointer, true);
+          });
+          view.setUint32(paletteStart + resources.paletteEntries.length * 8, 0, true);
+          view.setUint32(paletteStart + resources.paletteEntries.length * 8 + 4, 0, true);
+        }
+      }
       for (const [id, value] of statEdits) {
         const {at, format} = fields.get(id);
         if (format === 'level') view.setUint16(at, value ^ 0xe23a, true);
@@ -810,15 +1019,24 @@
         else if (format === 'byte') view.setUint8(at, value);
         else view.setUint16(at, value, true);
       }
+      if (bankPayload) {
+        output.set(bankPayload, bankStart);
+        view.setUint32(bankStart + bankPayload.length, bankPayload.length, true);
+        output.set(BANK_MARKER, bankStart + bankPayload.length + 4);
+      }
+      output.set(FOOTER, footerAt);
       return output;
     }
 
     return {
-      areas, stats, getEntities, getTemplates, getEnemyOptions, getBreakableOptions, renderRoomArt,
-      addEntity, addTypedEntity, duplicateEntity, updateEntity, updateTypedEntity: updateEntity, removeEntity, updateStat, build,
+      areas, stats, getEntities, getTemplates, getEnemyOptions, getEnemyBank, getBreakableOptions, renderRoomArt,
+      addEntity, addTypedEntity, duplicateEntity, updateEntity, updateTypedEntity: updateEntity, removeEntity,
+      swapEnemyBank, updateStat, build,
       undo() { history.pop()?.(); },
       get canUndo() { return history.length > 0; },
-      get changeCount() { return roomEdits.size + statEdits.size; },
+      get changeCount() {
+        return new Set([...roomEdits.keys(), ...roomResourceEdits.keys(), ...bankEdits.keys()]).size + statEdits.size;
+      },
     };
   }
 

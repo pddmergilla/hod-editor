@@ -153,6 +153,15 @@ a { color: inherit; }
 .entity-choice-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entity-coords { flex: none; color: #8fa1b6; font-size: 9px; font-variant-numeric: tabular-nums; }
 .selected-controls, .add-controls { margin: 9px 0; border-top: 1px solid #303a49; padding-top: 8px; }
+.enemy-bank-panel { margin-top: 12px; padding-top: 9px; border-top: 1px solid #303a49; }
+.enemy-bank-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.enemy-bank-heading .subsection-label { margin: 0; }
+.enemy-bank-scope { color: #d7c79f; font-size: 8px; font-weight: 700; letter-spacing: .1em; }
+.enemy-bank-note { margin: 6px 0 8px; color: #aab4c2; font-size: 10px; line-height: 1.4; }
+.enemy-bank-rows { display: flex; flex-direction: column; gap: 7px; }
+.enemy-bank-row { display: block; min-width: 0; color: #cfd6e1; font-size: 10px; }
+.enemy-bank-label { display: block; overflow: hidden; margin-bottom: 3px; color: #aeb9c8; text-overflow: ellipsis; white-space: nowrap; }
+.enemy-bank-row select { margin-top: 0; }
 .subsection-label { margin-bottom: 9px; color: #8997a9; font-size: 9px; font-weight: 700; letter-spacing: .12em; }
 .field-label { display: block; margin: 8px 0 5px; color: #cfd6e1; font-size: 11px; }
 .coordinate-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
