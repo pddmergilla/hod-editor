@@ -634,7 +634,8 @@
         if (!bySubtype.has(template.subtype)) bySubtype.set(template.subtype, []);
         bySubtype.get(template.subtype).push(template);
       }
-      return [...enemySubtypes].sort((a, b) => a - b).map(subtype => {
+      const subtypes = new Set([...enemySubtypes, ...templates.map(template => template.subtype)]);
+      return [...subtypes].sort((a, b) => a - b).map(subtype => {
         const name = enemyNames[subtype];
         const variants = bySubtype.get(subtype) || [];
         const choices = variants.map((template, index) => ({
@@ -680,6 +681,18 @@
           return {subtype: target, label, available: !reason, reason};
         }),
       }));
+    }
+
+    function getEnemyBankAddOptions(id) {
+      const room = roomById(id);
+      const rows = getEntities(id);
+      const selected = customBankFor(id) || originalBankFor(id);
+      return bankSubtypes.map(subtype => {
+        const reason = selected.has(subtype)
+          ? 'This enemy already has a bank slot.'
+          : bankPlan(room, new Set([...selected, subtype]), rows).reason;
+        return {subtype, label: bankEnemyLabel(subtype), available: !reason, reason};
+      });
     }
 
     function breakableAppearances(id) {
@@ -857,6 +870,13 @@
       editRoom(id, nextRows, nextBank, resources);
     }
 
+    function addEnemyToBank(id, subtype) {
+      check(isBankSubtype(subtype), 'Choose a supported enemy.');
+      const selected = customBankFor(id) || originalBankFor(id);
+      check(!selected.has(subtype), 'This enemy already has a bank slot.');
+      editRoom(id, getEntities(id), new Set([...selected, subtype]));
+    }
+
     function field(id, label, at, format, min, max, note) {
       let original;
       if (format === 'level') {
@@ -1029,9 +1049,10 @@
     }
 
     return {
-      areas, stats, getEntities, getTemplates, getEnemyOptions, getEnemyBank, getBreakableOptions, renderRoomArt,
+      areas, stats, getEntities, getTemplates, getEnemyOptions, getEnemyBank, getEnemyBankAddOptions,
+      getBreakableOptions, renderRoomArt,
       addEntity, addTypedEntity, duplicateEntity, updateEntity, updateTypedEntity: updateEntity, removeEntity,
-      swapEnemyBank, updateStat, build,
+      swapEnemyBank, addEnemyToBank, updateStat, build,
       undo() { history.pop()?.(); },
       get canUndo() { return history.length > 0; },
       get changeCount() {

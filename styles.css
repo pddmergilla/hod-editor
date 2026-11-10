@@ -138,6 +138,12 @@ a { color: inherit; }
 .map-status { min-height: 28px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 10px; color: #94a2b4; border-top: 1px solid #313948; background: #171c24; font-size: 11px; }
 .map-status .map-coordinates { color: #8fa1b6; font-size: 10px; letter-spacing: .04em; }
 .entity-section > h2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }
+.enemy-bank-panel { min-width: 0; margin: 0 0 9px; padding: 9px; border: 1px solid #394453; border-radius: 7px; background: #1b222c; }
+.enemy-bank-add { min-width: 0; }
+.enemy-bank-add .field-label { margin-top: 7px; }
+.enemy-bank-hint, .enemy-bank-empty { margin: 6px 0 0; color: #aab4c2; font-size: 10px; line-height: 1.4; }
+.enemy-bank-empty { color: #8f9caf; }
+.enemy-bank-add .button-wide { margin-top: 6px; }
 .entity-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; color: #cfd6e1; font-size: 11px; }
 .entity-panel-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .entity-count { color: #8fa1b6; font-size: 10px; letter-spacing: .04em; white-space: nowrap; }
@@ -153,7 +159,6 @@ a { color: inherit; }
 .entity-choice-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entity-coords { flex: none; color: #8fa1b6; font-size: 9px; font-variant-numeric: tabular-nums; }
 .selected-controls, .add-controls { margin: 9px 0; border-top: 1px solid #303a49; padding-top: 8px; }
-.enemy-bank-panel { margin-top: 12px; padding-top: 9px; border-top: 1px solid #303a49; }
 .enemy-bank-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .enemy-bank-heading .subsection-label { margin: 0; }
 .enemy-bank-scope { color: #d7c79f; font-size: 8px; font-weight: 700; letter-spacing: .1em; }
@@ -282,7 +287,7 @@ a { color: inherit; }
   .map-workspace { height: auto; min-height: 65vh; }
   .entity-sidebar { grid-column: 1 / -1; height: auto; border-top: 1px solid #313948; border-left: 0; overflow: visible; }
   .entity-section { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .entity-section > h2, .entity-panel-heading, .entity-list { grid-column: 1 / -1; }
+  .entity-section > h2, .entity-panel-heading, .enemy-bank-panel, .entity-list { grid-column: 1 / -1; }
   .entity-list { max-height: 220px; }
 }
 @media (max-width: 760px) {

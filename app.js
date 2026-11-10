@@ -61,7 +61,10 @@
     duplicateEntity: byId("duplicate-entity"),
     removeEntity: byId("remove-entity"),
     capacityHint: byId("entity-capacity-hint"),
-    enemyBankPanel: byId("enemy-bank-panel"),
+    enemyBankAddEnemy: byId("enemy-bank-add-enemy"),
+    enemyBankAddHint: byId("enemy-bank-add-hint"),
+    enemyBankAddButton: byId("enemy-bank-add-button"),
+    enemyBankEmpty: byId("enemy-bank-empty"),
     enemyBankRows: byId("enemy-bank-rows"),
     statsSearch: byId("stats-search"),
     statsCount: byId("stats-count"),
@@ -80,6 +83,7 @@
     editDraftKey: "",
     addDraft: { type: "0" },
     addDraftRoom: "",
+    enemyBankRoomId: "",
     category: "juste",
     zoom: 100,
     showEntities: true,
@@ -633,17 +637,57 @@
     renderEnemyBank(room);
   }
   function renderEnemyBank(room) {
-    ui.enemyBankPanel.hidden = true;
     ui.enemyBankRows.innerHTML = "";
-    if (!room || !state.model || typeof state.model.getEnemyBank !== "function") return;
-    let rows;
-    try {
-      rows = state.model.getEnemyBank(room.id);
-    } catch (error) {
-      showNotice(error.message || "Could not read the enemy bank.", "error");
+    ui.enemyBankEmpty.hidden = false;
+    ui.enemyBankAddButton.disabled = true;
+    const roomId = room ? String(room.id) : "";
+    if (roomId !== state.enemyBankRoomId) ui.enemyBankAddEnemy.value = "";
+    state.enemyBankRoomId = roomId;
+    if (!state.model) {
+      ui.enemyBankAddEnemy.innerHTML = '<option value="">Load a ROM first</option>';
+      ui.enemyBankAddEnemy.disabled = true;
+      ui.enemyBankAddHint.textContent = "Load a ROM to edit room banks.";
+      ui.enemyBankEmpty.textContent = "The room bank will appear here.";
       return;
     }
-    if (!Array.isArray(rows) || !rows.length) return;
+    if (!room || typeof state.model.getEnemyBank !== "function") {
+      ui.enemyBankAddEnemy.innerHTML = '<option value="">Choose a room first</option>';
+      ui.enemyBankAddEnemy.disabled = true;
+      ui.enemyBankAddHint.textContent = "Choose a room to edit its bank.";
+      ui.enemyBankEmpty.textContent = "Choose a room to inspect its bank.";
+      return;
+    }
+    let rows;
+    let options;
+    try {
+      rows = state.model.getEnemyBank(room.id);
+      options = state.model.getEnemyBankAddOptions(room.id);
+    } catch (error) {
+      showNotice(error.message || "Could not read the enemy bank.", "error");
+      ui.enemyBankAddEnemy.innerHTML = '<option value="">Bank is unavailable</option>';
+      ui.enemyBankAddEnemy.disabled = true;
+      ui.enemyBankAddHint.textContent = "Could not read this room's bank.";
+      ui.enemyBankEmpty.textContent = "Could not read this room's bank.";
+      return;
+    }
+    options.sort((a, b) => String(a.label || "").localeCompare(String(b.label || ""), undefined,
+      {sensitivity: "base", numeric: true}) || Number(a.subtype) - Number(b.subtype));
+    const addable = options.some(option => option.available);
+    const selectedValue = ui.enemyBankAddEnemy.value;
+    const selected = selectedValue === "" ? null : options.find(option => Number(option.subtype) === Number(selectedValue));
+    const optionMarkup = options.map(option => '<option value="' + Number(option.subtype) + '" data-available="' +
+      String(Boolean(option.available)) + '" data-reason="' + escapeHtml(option.reason || "") + '"' +
+      (option.reason ? ' title="' + escapeHtml(option.reason) + '"' : '') + '>' +
+      escapeHtml(option.label) + '</option>').join("");
+    ui.enemyBankAddEnemy.innerHTML = '<option value="">Choose an enemy…</option>' + optionMarkup;
+    ui.enemyBankAddEnemy.disabled = false;
+    ui.enemyBankAddEnemy.value = selected ? String(selected.subtype) : "";
+    updateEnemyBankAddState(addable, options.length);
+    if (!Array.isArray(rows) || !rows.length) {
+      ui.enemyBankEmpty.textContent = "No enemies in this room's bank yet.";
+      return;
+    }
+    ui.enemyBankEmpty.hidden = true;
     const sortedRows = rows.slice().sort((a, b) =>
       String(a.label || "").localeCompare(String(b.label || ""), undefined, {sensitivity: "base", numeric: true}) ||
       Number(a.subtype) - Number(b.subtype));
@@ -667,7 +711,53 @@
         '<select data-source-subtype="' + sourceSubtype + '" aria-label="Replace every ' + escapeHtml(sourceLabel) + ' in this room with">' +
         options + '</select></label>';
     }).join("");
-    ui.enemyBankPanel.hidden = !ui.enemyBankRows.childElementCount;
+  }
+  function updateEnemyBankAddState(addable, optionCount) {
+    const value = ui.enemyBankAddEnemy.value;
+    const selected = value === "" ? null : ui.enemyBankAddEnemy.selectedOptions[0];
+    const available = selected && selected.dataset.available === "true";
+    ui.enemyBankAddButton.disabled = !available;
+    if (selected && !available) {
+      ui.enemyBankAddHint.textContent = "Cannot add: " + selected.dataset.reason;
+    } else if (selected) {
+      ui.enemyBankAddHint.textContent = "Ready to add.";
+    } else if (addable) {
+      ui.enemyBankAddHint.textContent = "Choose an enemy to check room space.";
+    } else {
+      ui.enemyBankAddHint.textContent = optionCount
+        ? "No other supported enemy fits this room."
+        : "No supported enemies are available.";
+    }
+  }
+  function refreshEnemyAddDraft(room, draft) {
+    if (!draft || String(draft.type) !== "0") return draft;
+    const enemy = state.model.getEnemyOptions(room.id).find(option =>
+      option.subtype === Number(draft.enemySubtype) && option.available);
+    if (!enemy) return draftFor(room, "0", null);
+    const template = enemy.variants.find(option => option.id === draft.templateId) || enemy.variants[0];
+    return {...draft, enemySubtype: enemy.subtype, templateId: template ? template.id : ""};
+  }
+  function addEnemyToBank() {
+    const room = currentRoom();
+    if (!room || ui.enemyBankAddEnemy.value === "") return;
+    const selectedOption = ui.enemyBankAddEnemy.selectedOptions[0];
+    if (!selectedOption || selectedOption.dataset.available !== "true") return;
+    const subtype = Number(ui.enemyBankAddEnemy.value);
+    if (!Number.isInteger(subtype)) return;
+    const label = selectedOption.textContent;
+    try {
+      state.model.addEnemyToBank(room.id, subtype);
+      state.addDraft = refreshEnemyAddDraft(room, state.addDraft);
+      ui.enemyBankAddEnemy.value = "";
+      updateChrome();
+      renderRoomList();
+      renderMapWorkspace();
+      ui.enemyBankAddEnemy.focus();
+      showNotice("Added " + label + " to this room's bank.", "success");
+    } catch (error) {
+      renderMapWorkspace();
+      showNotice(error.message || "Could not add this enemy to the bank.", "error");
+    }
   }
   function resetEnemyAddDraft(room) {
     if (state.addDraft && String(state.addDraft.type) === "0") {
@@ -1225,6 +1315,10 @@
     const select = event.target.closest("[data-source-subtype]");
     if (select) swapEnemyBank(select);
   });
+  ui.enemyBankAddEnemy.addEventListener("change", () => updateEnemyBankAddState(
+    [...ui.enemyBankAddEnemy.options].some(option => option.dataset.available === "true"),
+    Math.max(0, ui.enemyBankAddEnemy.options.length - 1)));
+  ui.enemyBankAddButton.addEventListener("click", addEnemyToBank);
   ui.showEntities.addEventListener("change", () => {
     state.showEntities = ui.showEntities.checked;
     renderMapWorkspace();
