@@ -837,6 +837,12 @@
       return insertEntity(id, current, x, y);
     }
 
+    function pasteEntity(id, entity, sourceId, x, y) {
+      check(entity, 'Copy an entity first.');
+      if (String(sourceId) === String(id)) return insertEntity(id, entity, x, y);
+      return insertEntity(id, getTemplate(id, templateId(entity)), x, y);
+    }
+
     function updateEntity(id, index, values) {
       const rows = getEntities(id).slice();
       const current = rows[index];
@@ -1267,7 +1273,7 @@
     return {
       areas, stats, getEntities, getTemplates, getEnemyOptions, getEnemyBank, getEnemyBankAddOptions,
       getBreakableOptions, renderRoomArt, renderItemIcon,
-      addEntity, addTypedEntity, duplicateEntity, updateEntity, updateTypedEntity: updateEntity, removeEntity,
+      addEntity, addTypedEntity, duplicateEntity, pasteEntity, updateEntity, updateTypedEntity: updateEntity, removeEntity,
       swapEnemyBank, addEnemyToBank, updateStat, build,
       undo() { history.pop()?.(); },
       get canUndo() { return history.length > 0; },

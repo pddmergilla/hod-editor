@@ -78,6 +78,7 @@
     fileName: "",
     areaFilter: "castle:A",
     roomId: null,
+    entityClipboard: null,
     entityIndex: null,
     editDraft: null,
     editDraftKey: "",
@@ -1073,11 +1074,10 @@
   function duplicatePosition(entity, dimensions) {
     const limitX = Math.max(0, dimensions.width - 1);
     const limitY = Math.max(0, dimensions.height - 1);
-    let x = Math.max(0, Math.min(limitX, numeric(entity.x, 0) + 16));
-    let y = Math.max(0, Math.min(limitY, numeric(entity.y, 0) + 16));
-    if (x === entity.x && limitX > 0) x = Math.max(0, Math.min(limitX, numeric(entity.x, 0) - 16));
-    if (y === entity.y && limitY > 0) y = Math.max(0, Math.min(limitY, numeric(entity.y, 0) - 16));
-    return {x, y};
+    const baseX = numeric(entity.x, 0);
+    let x = Math.max(0, Math.min(limitX, baseX + 16));
+    if (x === baseX && limitX > 0) x = Math.max(0, Math.min(limitX, baseX - 16));
+    return {x, y: numeric(entity.y, 0)};
   }
   function duplicateEntity() {
     const room = currentRoom();
@@ -1091,6 +1091,40 @@
     } catch (error) {
       showNotice(error.message || "Could not duplicate this entity.", "error");
     }
+  }
+  function copyEntity() {
+    const room = currentRoom();
+    const entity = currentSelectedEntity(room);
+    if (!room || !entity) return false;
+    state.entityClipboard = {roomId: room.id, entity: {...entity}, x: entity.x, y: entity.y, lastRoomId: room.id};
+    showNotice("Entity copied.", "success");
+    return true;
+  }
+  function pasteEntity() {
+    const room = currentRoom();
+    const clip = state.entityClipboard;
+    if (!room || !clip) return false;
+    const dimensions = roomDimensions(room);
+    let position;
+    if (String(clip.lastRoomId) === String(room.id)) {
+      position = duplicatePosition(clip, dimensions);
+    } else {
+      position = {
+        x: Math.max(0, Math.min(Math.max(0, dimensions.width - 1), numeric(clip.x, 0))),
+        y: Math.max(0, Math.min(Math.max(0, dimensions.height - 1), numeric(clip.y, 0))),
+      };
+    }
+    try {
+      const index = state.model.pasteEntity(room.id, clip.entity, clip.roomId, position.x, position.y);
+      state.entityIndex = Number.isInteger(index) ? index : roomEntities(room).length - 1;
+      clip.x = position.x;
+      clip.y = position.y;
+      clip.lastRoomId = room.id;
+      afterEdit("Entity pasted.");
+    } catch (error) {
+      showNotice(error.message || "Could not paste this entity.", "error");
+    }
+    return true;
   }
   function removeEntity() {
     const room = currentRoom();
@@ -1500,6 +1534,7 @@
       const nextModel = await editor.open(bytes);
       if (!nextModel || !Array.isArray(nextModel.areas)) throw new Error("This ROM did not open as a Harmony of Dissonance project.");
       state.model = nextModel;
+      state.entityClipboard = null;
       iconCache.clear();
       state.itemId = "";
       state.fileName = file.name;
@@ -1703,6 +1738,18 @@
       event.preventDefault();
       const statsVisible = !byId("stats-panel").hidden;
       (statsVisible ? ui.statsSearch : ui.roomSearch).focus();
+    }
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey &&
+        (event.key === "c" || event.key === "C" || event.key === "v" || event.key === "V")) {
+      const target = event.target;
+      const editable = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement || (target && target.isContentEditable);
+      const textSelected = window.getSelection && String(window.getSelection() || "").length > 0;
+      const mapVisible = byId("stats-panel").hidden;
+      if (!editable && !textSelected && mapVisible && state.model && !state.drag) {
+        const handled = event.key.toLowerCase() === "c" ? copyEntity() : pasteEntity();
+        if (handled) event.preventDefault();
+      }
     }
     if (event.key === "Escape" && state.drag) {
       state.drag = null;
