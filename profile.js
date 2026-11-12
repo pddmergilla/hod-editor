@@ -23,6 +23,14 @@ globalThis.HodProfile = {
   bosses: [0x09, 0x11, 0x1e, 0x1f, 0x28, 0x2e, 0x36, 0x37, 0x42, 0x43, 0x44,
     0x49, 0x53, 0x54, 0x55, 0x56, 0x57, 0x60, 0x61, 0x62, 0x63, 0x77],
   spells: 0xe29d4,
+  // Subweapon throw records: 8 x 12 bytes, +1 is the heart cost. The second table is used
+  // while the matching ring is equipped. Base power is the attack kind's byte at 0xE2504 + kind * 4.
+  subweaponTables: [0xe2308, 0xe2368],
+  subweaponThrows: [
+    // [subweapon index, attack kind, ring equipment index or null]
+    [1, 0x07, 0x7c], [2, 0x08, 0x7d], [3, 0x09, 0x7b], [4, 0x0a, 0x7a],
+    [5, 0x0b, 0x7f], [6, 0x0c, 0x7e], [7, 0x2f, null],
+  ],
   books: ['Special', 'Fire', 'Ice', 'Thunder', 'Wind', 'Summoning'],
   subweapons: ['None', 'Knife', 'Axe', 'Cross', 'Holy Water', 'Holy Book', 'Sacred Fist', 'Shuriken'],
   items: [

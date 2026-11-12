@@ -905,6 +905,17 @@
         field(id + '-str', 'Strength bonus', at + 6, 'signed', -128, 127),
       ]});
     }
+    for (const [index, kind, ring] of profile.subweaponThrows) {
+      const id = 'subweapon-' + index;
+      const [normal, ringed] = profile.subweaponTables.map(table => table + index * 12 + 1);
+      const fields = [field(id + '-hearts', 'Heart cost', normal, 'byte', 0, 255)];
+      if (ring !== null) {
+        fields.push(field(id + '-ring-hearts', 'Heart cost with ' + pickupName(5, ring), ringed, 'byte', 0, 255));
+      }
+      fields.push(field(id + '-power', 'Base power', 0xe2504 + kind * 4, 'byte', 0, 255,
+        'Shared by every hit of this throw.'));
+      stats.juste.push({id, name: 'Subweapon · ' + profile.subweapons[index], fields});
+    }
 
     const activeEnemies = new Set([...rooms.values()].flatMap(room => room.entities)
       .filter(entity => entity.type === ENEMY).map(entity => entity.subtype));
