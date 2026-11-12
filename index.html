@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#140f1c">
+  <meta name="theme-color" content="#141413">
   <title>Harmony of Dissonance · Field Editor</title>
   <link rel="stylesheet" href="styles.css">
   <script src="profile.js" defer></script>
@@ -37,8 +37,7 @@
     <main>
       <section class="welcome-strip" aria-label="Editor status">
         <div>
-          <p class="eyebrow">A QUIET TOOL FOR A HAUNTED CASTLE</p>
-          <p class="welcome-copy">Load a local ROM to explore rooms and tune the numbers behind the journey.</p>
+          <p class="welcome-copy">Load a local .gba ROM to edit rooms and stats.</p>
         </div>
         <div class="session-state">
           <span class="state-orb" id="state-orb"></span>
@@ -53,8 +52,6 @@
         <button class="main-tab" id="stats-tab" role="tab" aria-selected="false" aria-controls="stats-panel" data-panel="stats-panel" type="button">
           <span class="tab-icon" aria-hidden="true">✧</span>Stats Editor
         </button>
-        <span class="tab-rule" aria-hidden="true"></span>
-        <span class="tab-note">CASTLE RECORDS · VOL. 01</span>
       </nav>
 
       <section class="panel map-panel is-visible" id="map-panel" role="tabpanel" aria-labelledby="map-tab">
@@ -74,7 +71,7 @@
                 <kbd>/</kbd>
               </label>
               <div class="room-list" id="room-list" aria-live="polite">
-                <div class="list-empty"><span class="empty-ornament">✦</span><strong>Waiting for a record</strong><span>Load a ROM to reveal its rooms.</span></div>
+                <div class="list-empty"><strong>No ROM loaded</strong><span>Load a ROM to list its rooms.</span></div>
               </div>
             </section>
             <section class="display-section" aria-label="Display">
@@ -87,7 +84,7 @@
           <section class="map-workspace" aria-label="Room map">
             <div class="room-toolbar">
               <div class="map-room-info">
-                <span class="room-breadcrumb" id="room-breadcrumb">MAP ARCHIVE · CASTLE A</span>
+                <span class="room-breadcrumb" id="room-breadcrumb">MAP</span>
                 <strong id="room-title">Choose a room</strong>
                 <small id="room-subtitle">Your map will appear here after a ROM is loaded.</small>
               </div>
@@ -101,8 +98,7 @@
             </div>
             <div class="map-viewport" id="map-viewport">
               <div class="map-empty">
-                <div class="empty-crest" aria-hidden="true"><span>✦</span></div>
-                <strong>The map is sleeping</strong>
+                <strong>No room selected</strong>
                 <span>Choose a room to see its layout and markers.</span>
               </div>
             </div>
@@ -202,7 +198,7 @@
       <section class="panel stats-panel" id="stats-panel" role="tabpanel" aria-labelledby="stats-tab" hidden>
         <div class="stats-heading">
           <div class="section-heading">
-            <div><p class="eyebrow">CHARACTER & CREATURE LEDGER</p><h1>Stats Editor</h1><p class="stats-intro">Edits stay in this tab until you download a ROM.</p></div>
+            <div><h1>Stats Editor</h1><p class="stats-intro">Edits stay in this tab until you download a ROM.</p></div>
           </div>
           <label class="search-box stats-search">
             <span class="search-glyph" aria-hidden="true">⌕</span><span class="sr-only">Search stat entries</span>
@@ -220,13 +216,13 @@
           <span class="ledger-count" id="stats-count">—</span>
         </div>
         <div class="stats-list" id="stats-list">
-          <div class="stats-empty"><span class="empty-crest" aria-hidden="true"><span>✧</span></span><strong>No ledger loaded</strong><span>Load a ROM to view editable stats.</span></div>
+          <div class="stats-empty"><strong>No ROM loaded</strong><span>Load a ROM to view editable stats.</span></div>
         </div>
       </section>
     </main>
 
     <footer class="site-footer">
-      <div class="footer-brand"><span class="footer-mark" aria-hidden="true">✦</span><span>Edits are downloaded as a separate GBA file.</span></div>
+      <div class="footer-brand"><span>Edits are downloaded as a separate GBA file.</span></div>
       <div class="credits">
         <span class="eyebrow">WITH THANKS TO</span>
         <a href="https://github.com/LagoLunatic/DSVEdit" target="_blank" rel="noreferrer">DSVEdit <span aria-hidden="true">↗</span></a>
@@ -234,7 +230,6 @@
         <a href="https://github.com/alexarroyoduque/REharmonized/releases/tag/1.3.1" target="_blank" rel="noreferrer">REharmonized 1.3.1 <span aria-hidden="true">↗</span></a>
         <span class="credit-pending" title="Earlier Lure Key and Hint Card 3">Better Fast Travel <small>bundled notes</small></span>
       </div>
-      <span class="footer-edition">HOD · LOCAL BUILD</span>
     </footer>
   </div>
   <div class="live-notice" id="live-notice" role="status" aria-live="polite" hidden></div>

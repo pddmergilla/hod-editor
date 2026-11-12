@@ -259,7 +259,7 @@
     const count = groups.reduce((total, group) => total + group.rooms.length, 0);
     ui.roomCount.textContent = state.model ? String(count).padStart(2, "0") : "—";
     if (!state.model) {
-      ui.roomList.innerHTML = '<div class="list-empty"><span class="empty-ornament">✦</span><strong>Waiting for a record</strong><span>Load a ROM to reveal its rooms.</span></div>';
+      ui.roomList.innerHTML = '<div class="list-empty"><strong>No ROM loaded</strong><span>Load a ROM to list its rooms.</span></div>';
       return;
     }
     if (!count) {
@@ -387,7 +387,7 @@
     const markers = state.showEntities ? entities.map(markerMarkup).join("") : "";
     const background = preview.status === "ready"
       ? '<image class="room-art" href="' + preview.dataUrl + '" x="0" y="0" width="' + preview.width + '" height="' + preview.height + '" preserveAspectRatio="none" image-rendering="pixelated"/>'
-      : '<rect x="0" y="0" width="' + width + '" height="' + height + '" fill="#21192b"/>';
+      : '<rect x="0" y="0" width="' + width + '" height="' + height + '" fill="#262624"/>';
     const collision = state.showCollision || preview.status !== "ready" ? collisionRects(room) : "";
     return '<svg id="room-map" class="room-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Room layout with entity markers">' +
       '<title>' + escapeHtml(room.name || room.id) + ' layout</title>' +
@@ -829,9 +829,9 @@
       ui.collisionToggle.disabled = true;
       ui.roomTitle.textContent = "Choose a room";
       ui.roomSubtitle.textContent = state.model ? "Select a room from the area list." : "Your map will appear here after a ROM is loaded.";
-      ui.roomBreadcrumb.textContent = state.model ? areaFilterLabel() : "MAP ARCHIVE";
+      ui.roomBreadcrumb.textContent = state.model ? areaFilterLabel() : "MAP";
       ui.mapSize.textContent = "— × — PX";
-      ui.mapViewport.innerHTML = '<div class="map-empty"><div class="empty-crest" aria-hidden="true"><span>✦</span></div><strong>The map is sleeping</strong><span>Choose a room to see its layout and markers.</span></div>';
+      ui.mapViewport.innerHTML = '<div class="map-empty"><strong>No room selected</strong><span>Choose a room to see its layout and markers.</span></div>';
       ui.mapHint.textContent = "Select a room from the index.";
       ui.scrollUp.disabled = true;
       ui.scrollDown.disabled = true;
@@ -1425,14 +1425,14 @@
     });
 
     if (!state.model) {
-      ui.statsList.innerHTML = '<div class="stats-empty"><span class="empty-crest" aria-hidden="true"><span>✧</span></span><strong>No ledger loaded</strong><span>Load a ROM to view editable stats.</span></div>';
+      ui.statsList.innerHTML = '<div class="stats-empty"><strong>No ROM loaded</strong><span>Load a ROM to view editable stats.</span></div>';
       return;
     }
     if (state.category === "juste") return renderLevels(query);
     if (state.category === "spells") return renderSpells(query);
     if (state.category === "items") return renderItems(query);
     if (!filtered.length) {
-      ui.statsList.innerHTML = '<div class="stats-empty"><span class="empty-crest" aria-hidden="true"><span>⌕</span></span><strong>' + (query ? "No entries found" : "No records in this chapter") + '</strong><span>' + (query ? "Try a shorter search." : "Choose another category.") + '</span></div>';
+      ui.statsList.innerHTML = '<div class="stats-empty"><span class="empty-crest" aria-hidden="true"><span>⌕</span></span><strong>' + (query ? "No entries found" : "No entries in this category") + '</strong><span>' + (query ? "Try a shorter search." : "Choose another category.") + '</span></div>';
       return;
     }
 
