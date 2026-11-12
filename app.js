@@ -677,8 +677,10 @@
     const selected = selectedValue === "" ? null : options.find(option => Number(option.subtype) === Number(selectedValue));
     const optionMarkup = options.map(option => '<option value="' + Number(option.subtype) + '" data-available="' +
       String(Boolean(option.available)) + '" data-reason="' + escapeHtml(option.reason || "") + '"' +
+      ' data-label="' + escapeHtml(option.label) + '"' +
       (option.reason ? ' title="' + escapeHtml(option.reason) + '"' : '') + '>' +
-      escapeHtml(option.label) + '</option>').join("");
+      escapeHtml(option.label + (option.available ? " · Fits" : " · " + (option.reason || "Does not fit"))) +
+      '</option>').join("");
     ui.enemyBankAddEnemy.innerHTML = '<option value="">Choose an enemy…</option>' + optionMarkup;
     ui.enemyBankAddEnemy.disabled = false;
     ui.enemyBankAddEnemy.value = selected ? String(selected.subtype) : "";
@@ -744,7 +746,7 @@
     if (!selectedOption || selectedOption.dataset.available !== "true") return;
     const subtype = Number(ui.enemyBankAddEnemy.value);
     if (!Number.isInteger(subtype)) return;
-    const label = selectedOption.textContent;
+    const label = selectedOption.dataset.label || selectedOption.textContent;
     try {
       state.model.addEnemyToBank(room.id, subtype);
       state.addDraft = refreshEnemyAddDraft(room, state.addDraft);
