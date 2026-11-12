@@ -1,7 +1,11 @@
 'use strict';
 
 globalThis.HodProfile = {
-  size: 0x1de9dd8,
+  // Smallest base image. Editor exports append their data after the base.
+  // 0x800000: Visual Improvement + Better Fast Travel (no REharmonized), opened as an editor export.
+  // 0x1de9dd8: the earlier REharmonized build, which can also be opened raw.
+  size: 0x800000,
+  baseSizes: [0x800000, 0x1de9dd8],
   supportedHashes: [
     '67b2269180ecae8b38575071c21f2b34d8285ac16561f6c0b00b3ddc0ad2cc38',
     '951388561ca3a98ca22436eaeebc3bc3e3eaaa9b9db6f25b0c8a34df289c3854',

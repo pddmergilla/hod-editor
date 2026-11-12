@@ -83,7 +83,7 @@
     check(title === profile.title && SIGNATURES.every(([at, value]) => read.word(at) === value),
       'This ROM has a different Harmony of Dissonance layout.');
     if (!fromEditor) {
-      check(bytes.length === profile.size, 'This ROM differs from the supported modded base.');
+      check(profile.baseSizes.includes(bytes.length), 'This ROM differs from the supported modded base.');
       check(globalThis.crypto?.subtle, 'Open the editor from a local file or a secure website.');
       const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
       const actual = Array.from(hash, n => n.toString(16).padStart(2, '0')).join('');
@@ -964,7 +964,7 @@
     function build() {
       const customBanks = new Map([...savedBanks, ...bankEdits]);
       if (!roomEdits.size && !roomResourceEdits.size && !customBanks.size && !statEdits.size &&
-          bytes.length === profile.size) return bytes.slice();
+          profile.baseSizes.includes(bytes.length)) return bytes.slice();
       let end = (bytes.length + 3) & ~3;
       const entityLists = [];
       const resourceLists = [];
