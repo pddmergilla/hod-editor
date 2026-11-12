@@ -877,6 +877,111 @@
       editRoom(id, getEntities(id), new Set([...selected, subtype]));
     }
 
+    // Game text: a header halfword, glyph halfwords, then 0xF006 0xF00A. 0x8540+ glyphs index the
+    // proportional font table at 0xC5508; uppercase letters and digits use full-width Shift-JIS codes.
+    const TEXT_TABLE = 0x495500;
+    const glyphDecoder = new TextDecoder('shift_jis');
+    const sjisChar = code => glyphDecoder.decode(Uint8Array.of(code >> 8, code & 255)).normalize('NFKC');
+    const encodeMap = new Map();
+    for (let i = 0; i < 0x26; i++) {
+      const char = sjisChar(read.half(0xc5508 + i * 4));
+      if (char.length === 1 && !encodeMap.has(char)) encodeMap.set(char, 0x8540 + i);
+    }
+    for (let k = 0; k < 26; k++) {
+      const char = String.fromCharCode(65 + k);
+      if (!encodeMap.has(char)) encodeMap.set(char, 0x8260 + k);
+    }
+    for (let k = 0; k < 10; k++) encodeMap.set(String(k), 0x824f + k);
+    for (const [char, code] of [['?', 0x8148], ['/', 0x815e], ['‘', 0x8165], ['”', 0x8168], ['+', 0x817b],
+      ['-', 0x817c], ['=', 0x8181]]) {
+      if (!encodeMap.has(char)) encodeMap.set(char, code);
+    }
+    if (encodeMap.has('’')) encodeMap.set("'", encodeMap.get('’'));
+    if (encodeMap.has('”')) encodeMap.set('"', encodeMap.get('”'));
+    const glyphChar = code => {
+      let char = null;
+      if (code >= 0x8540 && code < 0x8540 + 0x26) char = sjisChar(read.half(0xc5508 + (code - 0x8540) * 4));
+      else if (code >= 0x8140 && code < 0x8540) char = sjisChar(code);
+      return char && encodeMap.get(char) === code ? char : null;
+    };
+
+    function readText(id) {
+      const at = read.offset(read.word(TEXT_TABLE + id * 4), 4);
+      const codes = [];
+      for (let i = 1; i < 512; i++) {
+        const code = read.half(at + i * 2);
+        if (code === 0xf00a) break;
+        codes.push(code);
+      }
+      const trail = codes[codes.length - 1] === 0xf006;
+      if (trail) codes.pop();
+      const text = codes.map(code => code === 0xf006 ? '\n' : glyphChar(code) ?? '{' + hex(code, 4) + '}').join('');
+      return {header: read.half(at), trail, text};
+    }
+
+    function encodeText(text, {header, trail}) {
+      const codes = [header];
+      const parts = text.replace(/\r\n?/g, '\n').split(/(\{[0-9a-fA-F]{4}\})/);
+      for (const part of parts) {
+        if (/^\{[0-9a-fA-F]{4}\}$/.test(part)) {
+          codes.push(parseInt(part.slice(1, 5), 16));
+          continue;
+        }
+        for (const char of part) {
+          if (char === '\n') codes.push(0xf006);
+          else if (encodeMap.has(char)) codes.push(encodeMap.get(char));
+          else throw new Error('The game font has no "' + char + '" character.');
+        }
+      }
+      if (trail) codes.push(0xf006);
+      codes.push(0xf00a);
+      check(codes.length <= 400, 'This text is too long.');
+      return codes;
+    }
+
+    function textField(id, label, textId, multiline, note) {
+      const {header, trail, text} = readText(textId);
+      const ui = {id, label, kind: 'text', multiline, value: text, note};
+      fields.set(id, {ui, original: text, at: textId, format: 'text', header, trail});
+      return ui;
+    }
+
+    // Item icons: 4 uncompressed 4bpp pages of 64 icons (16x16, 1D tile order), palettes at 0x124104.
+    const ICON_PAGES = [0x080e8a04, 0x080eaa08, 0x080eca0c, 0x080eea10];
+    const ICON_PALETTES = 0x124104;
+    const iconPaletteCount = read.byte(ICON_PALETTES + 2);
+    const iconPages = ICON_PAGES.map(pointer => {
+      const at = read.offset(pointer, 4);
+      if (read.byte(at) === 1) return decompressedAt(read.word(at + 4));
+      return bytes.subarray(at + 4, at + 4 + read.byte(at + 3) * 512);
+    });
+    function renderItemIcon(index, palette) {
+      const icon = index - 1;
+      const page = iconPages[icon >> 6];
+      if (icon < 0 || !page || palette < 0 || palette >= iconPaletteCount) return null;
+      const local = icon & 63;
+      const pixels = new Uint8ClampedArray(16 * 16 * 4);
+      for (let ty = 0; ty < 2; ty++) {
+        for (let tx = 0; tx < 2; tx++) {
+          const tile = ((local >> 3) * 2 + ty) * 16 + (local & 7) * 2 + tx;
+          for (let y = 0; y < 8; y++) {
+            for (let x = 0; x < 8; x++) {
+              const value = page[tile * 32 + y * 4 + (x >> 1)];
+              const color = x & 1 ? value >> 4 : value & 15;
+              if (!color) continue;
+              const rgb = read.half(ICON_PALETTES + 4 + palette * 32 + color * 2);
+              const o = ((ty * 8 + y) * 16 + tx * 8 + x) * 4;
+              pixels[o] = (rgb & 31) << 3 | (rgb & 31) >> 2;
+              pixels[o + 1] = (rgb >> 5 & 31) << 3 | (rgb >> 5 & 31) >> 2;
+              pixels[o + 2] = (rgb >> 10 & 31) << 3 | (rgb >> 10 & 31) >> 2;
+              pixels[o + 3] = 255;
+            }
+          }
+        }
+      }
+      return {width: 16, height: 16, pixels};
+    }
+
     function field(id, label, at, format, min, max, note) {
       let original;
       if (format === 'level') {
@@ -891,31 +996,104 @@
       return ui;
     }
 
-    const stats = {juste: [], enemies: [], bosses: [], spells: []};
+    const stats = {juste: [], enemies: [], bosses: [], spells: [], items: []};
     for (let level = 1; level <= 99; level++) {
       const id = 'level-' + level;
-      stats.juste.push({id, name: level === 1 ? 'Level 1 · Starting stats' : 'Level ' + level,
+      stats.juste.push({id, kind: 'level', level, name: level === 1 ? 'Level 1 · Starting stats' : 'Level ' + level,
         fields: profile.levelStats.map(([name, at, min], i) =>
           field(id + '-' + i, name, at + (level - 1) * 2, 'level', min, 999))});
     }
+
+    // Items. Name text 0x22 + item ID, description text 0xF7 + item ID; icon halfword = index+1 | palette << 8.
+    const RESISTANCES = ['Poison', 'Curse', 'Stone', 'Fire', 'Ice', 'Thunder', 'Wind'];
+    const ELEMENTS = ['Fire', 'Ice', 'Thunder', 'Wind'];
+    const SLOTS = {0: 'Accessories', 1: 'Arms', 2: 'Body armor', 3: 'Head', 4: 'Feet'};
+    function itemEntry(id, group, at, extra) {
+      const itemId = read.half(at);
+      return {id, kind: 'item', group, fields: [
+        textField(id + '-name', 'Name', 0x22 + itemId, false, 'Shown in menus and pickup messages.'),
+        textField(id + '-desc', 'Description', 0xf7 + itemId, true, 'Enter starts a new line.'),
+        Object.assign(field(id + '-icon', 'Icon', at + 2, 'byte', 1, 255), {role: 'icon'}),
+        Object.assign(field(id + '-palette', 'Icon palette', at + 3, 'byte', 0, iconPaletteCount - 1), {role: 'palette'}),
+        ...extra,
+      ]};
+    }
+    const equipStats = (id, at) => [
+      field(id + '-str', 'STR', at + 6, 'signed', -128, 127),
+      field(id + '-def', 'DEF', at + 7, 'signed', -128, 127),
+      field(id + '-int', 'INT', at + 8, 'signed', -128, 127),
+      field(id + '-lck', 'LCK', at + 9, 'signed', -128, 127),
+    ];
+    const bitsField = (id, label, at, names, note) =>
+      Object.assign(field(id, label, at, 'half', 0, 65535, note), {bits: names.map((name, bit) => ({bit, name}))});
+    for (let i = 0; i < 28; i++) {
+      const at = 0x4b24a4 + i * 12;
+      const id = 'consumable-' + i;
+      const type = read.byte(at + 4);
+      const extra = [];
+      if (type === 0 || type === 1) {
+        extra.push(Object.assign(field(id + '-restores', 'Restores', at + 4, 'byte', 0, 1),
+          {options: [{value: 0, label: 'HP'}, {value: 1, label: 'MP'}]}));
+        extra.push(field(id + '-amount', 'Amount', at + 6, 'half', 0, 9999, 'Capped at the max.'));
+      } else if (type === 2) {
+        extra.push(Object.assign(field(id + '-cures', 'Cures', at + 6, 'half', 1, 2),
+          {options: [{value: 1, label: 'Poison'}, {value: 2, label: 'Curse'}]}));
+      } else if (type === 3) {
+        extra.push(field(id + '-duration', 'Invincibility', at + 6, 'half', 0, 65535, 'Frames. 60 is about 1 second.'));
+      }
+      stats.items.push(itemEntry(id, type <= 3 ? 'Consumables' : 'Key items & treasures', at, extra));
+    }
     for (let i = 0; i < 9; i++) {
       const at = 0x4b25f4 + i * 12;
-      const id = 'tip-' + i;
-      stats.juste.push({id, name: pickupName(4, i), fields: [
-        field(id + '-str', 'Strength bonus', at + 6, 'signed', -128, 127),
-      ]});
+      const id = 'whip-' + i;
+      stats.items.push(itemEntry(id, 'Whip parts', at, [...equipStats(id, at),
+        bitsField(id + '-element', 'Whip element', at + 10, ELEMENTS, 'Element added to whip attacks.')]));
     }
+    for (let i = 0; i < 128; i++) {
+      const at = 0x4b2660 + i * 12;
+      const id = 'equip-' + i;
+      const entry = itemEntry(id, SLOTS[read.byte(at + 4)] || 'Other equipment', at, [...equipStats(id, at),
+        bitsField(id + '-res', 'Resistances', at + 10, RESISTANCES,
+          'Fire, Ice, Thunder and Wind cut that element’s damage by about 25%.')]);
+      stats.items.push(entry);
+    }
+    for (const [type, group, start, count, stride] of profile.items) {
+      if (type < 6) continue;
+      for (let i = 0; i < count; i++) {
+        stats.items.push(itemEntry('item' + type + '-' + i, group, start + i * stride, []));
+      }
+    }
+
     for (const [index, kind, ring] of profile.subweaponThrows) {
       const id = 'subweapon-' + index;
       const [normal, ringed] = profile.subweaponTables.map(table => table + index * 12 + 1);
       const fields = [field(id + '-hearts', 'Heart cost', normal, 'byte', 0, 255)];
       if (ring !== null) {
-        fields.push(field(id + '-ring-hearts', 'Heart cost with ' + pickupName(5, ring), ringed, 'byte', 0, 255));
+        fields.push(Object.assign(field(id + '-ring-hearts', 'Heart cost with ring', ringed, 'byte', 0, 255,
+          'While ' + pickupName(5, ring) + ' is equipped.'), {role: 'ring'}));
       }
       fields.push(field(id + '-power', 'Base power', 0xe2504 + kind * 4, 'byte', 0, 255,
         'Shared by every hit of this throw.'));
-      stats.juste.push({id, name: 'Subweapon · ' + profile.subweapons[index], fields});
+      stats.spells.push({id, kind: 'subweapon', weapon: index, name: 'Subweapon · ' + profile.subweapons[index],
+        ring: ring === null ? null : pickupName(5, ring), fields});
     }
+
+    // Enemy drops: halfword (type << 8 | item). 0 means no drop. Type is the pickup subtype.
+    const dropOptions = [{value: 0, label: 'Nothing', group: ''}];
+    for (let item = 0; item < 6; item++) dropOptions.push({value: 0x100 | item, label: 'Money bag · size ' + item, group: 'Money'});
+    for (const [type, group, , count] of profile.items) {
+      if (type !== 3 && type !== 4 && type !== 5) continue;
+      for (let item = 0; item < (type === 3 ? 28 : count); item++) {
+        const name = getText(0x22 + read.half(profile.items.find(row => row[0] === type)[2] + item * 12));
+        dropOptions.push({value: type << 8 | item, label: name || 'Item $' + hex(item), group});
+      }
+    }
+    const dropField = (id, label, at) => {
+      const ui = field(id, label, at, 'half', 0, 65535);
+      ui.options = dropOptions.some(option => option.value === ui.value) ? dropOptions
+        : [...dropOptions, {value: ui.value, label: 'Other · $' + hex(ui.value, 4), group: 'Current'}];
+      return ui;
+    };
 
     const activeEnemies = new Set([...rooms.values()].flatMap(room => room.entities)
       .filter(entity => entity.type === ENEMY).map(entity => entity.subtype));
@@ -934,8 +1112,10 @@
         field(id + '-defense', 'Defense', at + 17, 'byte', 0, 255),
         field(id + '-xp', 'EXP', at + 14, 'half', 0, 65535),
         field(id + '-level', 'Level', at + 16, 'byte', 0, 255),
+        dropField(id + '-drop1-item', 'Drop 1', at + 8),
         field(id + '-drop1', 'Drop 1 chance', at + 18, 'byte', 0, 255, 'Out of 1024.'),
-        field(id + '-drop2', 'Drop 2 chance', at + 19, 'byte', 0, 255, 'Out of 1024.'),
+        dropField(id + '-drop2-item', 'Drop 2', at + 10),
+        field(id + '-drop2', 'Drop 2 chance', at + 19, 'byte', 0, 255, 'Out of 1024. Rolled before drop 1.'),
       ]};
       stats[profile.bosses.includes(normalId) ? 'bosses' : 'enemies'].push(row);
     }
@@ -947,7 +1127,7 @@
       const book = profile.books[Math.floor(i / 8)];
       const weapon = profile.subweapons[i % 8];
       const names = {1: 'Maxim Mirage', 7: 'Maxim · Healing Spell', 40: 'Summoning · Healing Spell'};
-      const row = {id, name: names[i] || book + ' · ' + weapon, fields: [
+      const row = {id, kind: 'spell', book: Math.floor(i / 8), weapon: i % 8, name: names[i] || book + ' · ' + weapon, fields: [
         field(id + '-mp', 'MP cost', at + 6, 'half', 0, 32767),
         field(id + '-hearts', 'Heart cost', at + 8, 'half', 0, 32767),
       ]};
@@ -962,7 +1142,16 @@
     function updateStat(id, value) {
       const field = fields.get(id);
       check(field, 'Choose a valid stat.');
-      integer(value, field.ui.min, field.ui.max, field.ui.label);
+      if (field.format === 'text') {
+        check(typeof value === 'string', field.ui.label + ' must be text.');
+        check(value.trim().length > 0, field.ui.label + ' cannot be empty.');
+        encodeText(value, field);
+      } else {
+        integer(value, field.ui.min, field.ui.max, field.ui.label);
+        if (field.ui.options) {
+          check(field.ui.options.some(option => option.value === value), 'Choose one of the listed options.');
+        }
+      }
       const previous = field.ui.value;
       if (previous === value) return;
       history.push(() => {
@@ -1001,6 +1190,14 @@
           end += (resources.paletteEntries.length + 1) * 8;
         }
         if (list.gfxStart !== undefined || list.paletteStart !== undefined) resourceLists.push({room, resources, ...list});
+      }
+      const textLists = [];
+      for (const [id, value] of statEdits) {
+        const field = fields.get(id);
+        if (field.format !== 'text') continue;
+        const codes = encodeText(value, field);
+        textLists.push({textId: field.at, codes, start: end});
+        end += (codes.length * 2 + 3) & ~3;
       }
       const bankPayload = customBanks.size ? new TextEncoder().encode(JSON.stringify({
         version: 1,
@@ -1048,10 +1245,15 @@
       }
       for (const [id, value] of statEdits) {
         const {at, format} = fields.get(id);
+        if (format === 'text') continue;
         if (format === 'level') view.setUint16(at, value ^ 0xe23a, true);
         else if (format === 'signed') view.setInt8(at, value);
         else if (format === 'byte') view.setUint8(at, value);
         else view.setUint16(at, value, true);
+      }
+      for (const {textId, codes, start} of textLists) {
+        codes.forEach((code, index) => view.setUint16(start + index * 2, code, true));
+        view.setUint32(TEXT_TABLE + textId * 4, ROM + start, true);
       }
       if (bankPayload) {
         output.set(bankPayload, bankStart);
@@ -1064,7 +1266,7 @@
 
     return {
       areas, stats, getEntities, getTemplates, getEnemyOptions, getEnemyBank, getEnemyBankAddOptions,
-      getBreakableOptions, renderRoomArt,
+      getBreakableOptions, renderRoomArt, renderItemIcon,
       addEntity, addTypedEntity, duplicateEntity, updateEntity, updateTypedEntity: updateEntity, removeEntity,
       swapEnemyBank, addEnemyToBank, updateStat, build,
       undo() { history.pop()?.(); },

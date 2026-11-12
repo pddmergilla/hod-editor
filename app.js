@@ -85,6 +85,9 @@
     addDraftRoom: "",
     enemyBankRoomId: "",
     category: "juste",
+    levelRange: "1-10",
+    spellBook: 1,
+    itemId: "",
     zoom: 100,
     showEntities: true,
     showCollision: false,
@@ -1154,6 +1157,254 @@
     return Array.isArray(entries) ? entries : [];
   }
 
+  const iconCache = new Map();
+  function iconUrl(index, palette) {
+    const key = index + "/" + palette;
+    if (iconCache.has(key)) return iconCache.get(key);
+    let url = "";
+    const icon = state.model && state.model.renderItemIcon ? state.model.renderItemIcon(index, palette) : null;
+    if (icon) {
+      const canvas = document.createElement("canvas");
+      canvas.width = icon.width;
+      canvas.height = icon.height;
+      canvas.getContext("2d").putImageData(new ImageData(icon.pixels, icon.width, icon.height), 0, 0);
+      url = canvas.toDataURL();
+    }
+    iconCache.set(key, url);
+    return url;
+  }
+
+  function fieldOf(entry, suffix) {
+    return (entry.fields || []).find(field => field.id === entry.id + "-" + suffix) || null;
+  }
+
+  function findField(id) {
+    for (const category of ["juste", "enemies", "bosses", "spells", "items"]) {
+      for (const entry of allStats(category)) {
+        const field = (entry.fields || []).find(item => item.id === id);
+        if (field) return { entry, field };
+      }
+    }
+    return null;
+  }
+
+  function entryIcon(entry, size) {
+    const index = fieldOf(entry, "icon");
+    const palette = fieldOf(entry, "palette");
+    const url = index && palette ? iconUrl(index.value, palette.value) : "";
+    return '<span class="item-icon" style="width:' + size + 'px;height:' + size + 'px" data-icon-for="' + escapeHtml(entry.id) + '">' +
+      (url ? '<img src="' + url + '" alt="">' : "") + "</span>";
+  }
+
+  function entryTitle(entry) {
+    const name = fieldOf(entry, "name");
+    return name ? name.value.replace(/\n/g, " ") : (entry.name || entry.id);
+  }
+
+  function optionMarkup(options, selected) {
+    let html = "";
+    let group = null;
+    for (const option of options) {
+      if (option.group !== group) {
+        if (group) html += "</optgroup>";
+        group = option.group || "";
+        if (group) html += '<optgroup label="' + escapeHtml(group) + '">';
+      }
+      html += '<option value="' + option.value + '"' + (option.value === selected ? " selected" : "") + ">" + escapeHtml(option.label) + "</option>";
+    }
+    return html + (group ? "</optgroup>" : "");
+  }
+
+  function controlMarkup(field, owner, extraClass) {
+    const aria = ' aria-label="' + escapeHtml(owner + " " + field.label) + '"';
+    const note = field.note ? '<span class="stat-note">' + escapeHtml(field.note) + "</span>" : "";
+    const label = '<span class="stat-field-label">' + escapeHtml(field.label) + "</span>";
+    const cls = "stat-field" + (extraClass ? " " + extraClass : "");
+    if (field.bits) {
+      const boxes = field.bits.map(({ bit, name }) =>
+        '<label class="bit-chip"><input type="checkbox" data-field-id="' + escapeHtml(field.id) + '" data-bit="' + bit + '"' +
+        ((field.value >> bit) & 1 ? " checked" : "") + '><span>' + escapeHtml(name) + "</span></label>").join("");
+      return '<div class="' + cls + ' stat-field-wide" role="group"' + aria + ">" + label + '<div class="bit-chips">' + boxes + "</div>" + note + "</div>";
+    }
+    if (field.options) {
+      const lazy = field.options.length > 24;
+      const options = lazy ? field.options.filter(option => option.value === field.value) : field.options;
+      return '<label class="' + cls + '">' + label + '<select data-field-id="' + escapeHtml(field.id) + '"' + (lazy ? ' data-lazy="true"' : "") + aria + ">" +
+        optionMarkup(options, field.value) + "</select>" + note + "</label>";
+    }
+    if (field.kind === "text") {
+      const control = field.multiline
+        ? '<textarea rows="3" data-field-id="' + escapeHtml(field.id) + '"' + aria + ">" + escapeHtml(field.value) + "</textarea>"
+        : '<input type="text" value="' + escapeHtml(field.value) + '" data-field-id="' + escapeHtml(field.id) + '"' + aria + ">";
+      return '<label class="' + cls + ' stat-field-wide">' + label + control + note + "</label>";
+    }
+    const min = field.min === undefined || field.min === null ? "" : ' min="' + escapeHtml(field.min) + '"';
+    const max = field.max === undefined || field.max === null ? "" : ' max="' + escapeHtml(field.max) + '"';
+    return '<label class="' + cls + '">' + label + '<input type="number" step="1" value="' + escapeHtml(field.value) + '" data-field-id="' +
+      escapeHtml(field.id) + '"' + min + max + aria + ">" + note + "</label>";
+  }
+
+  function emptyMarkup(glyph, title, detail) {
+    return '<div class="stats-empty"><span class="empty-crest" aria-hidden="true"><span>' + glyph + "</span></span><strong>" + title + "</strong><span>" + detail + "</span></div>";
+  }
+
+  function chipRow(items, selected, attribute) {
+    return '<div class="chip-row" role="tablist">' + items.map(([value, label]) =>
+      '<button type="button" class="view-chip' + (String(value) === String(selected) ? " is-selected" : "") + '" ' + attribute + '="' + escapeHtml(value) + '" aria-selected="' +
+      (String(value) === String(selected)) + '">' + escapeHtml(label) + "</button>").join("") + "</div>";
+  }
+
+  function levelDelta(stat, level) {
+    if (level <= 1) return "";
+    const entries = allStats("juste");
+    const current = entries[level - 1].fields[stat].value;
+    const previous = entries[level - 2].fields[stat].value;
+    const delta = current - previous;
+    return delta === 0 ? "±0" : (delta > 0 ? "+" : "") + delta;
+  }
+
+  function renderLevels(query) {
+    const entries = allStats("juste");
+    const ranges = [];
+    for (let start = 1; start <= 99; start += 10) ranges.push([start + "-" + Math.min(start + 9, 99), start + "–" + Math.min(start + 9, 99)]);
+    ranges.push(["all", "All"]);
+    const asNumber = Number(query);
+    let rows;
+    if (query && Number.isInteger(asNumber) && asNumber >= 1 && asNumber <= 99) {
+      rows = [entries[asNumber - 1]];
+    } else {
+      const [from, to] = state.levelRange === "all" ? [1, 99] : state.levelRange.split("-").map(Number);
+      rows = entries.slice(from - 1, to);
+    }
+    const stats = entries[0].fields.map(field => field.label);
+    ui.statsCount.textContent = rows.length + " OF 99 LEVELS";
+    const head = "<tr><th scope=\"col\">Level</th>" + stats.map(name => '<th scope="col">' + escapeHtml(name) + "</th>").join("") + "</tr>";
+    const body = rows.map(entry => '<tr class="' + (entry.level === 1 ? "is-start" : "") + '"><th scope="row"><span class="level-number">' + entry.level + "</span>" +
+      (entry.level === 1 ? '<span class="level-tag">START</span>' : "") + "</th>" +
+      entry.fields.map((field, stat) => '<td><input type="number" step="1" value="' + escapeHtml(field.value) + '" min="' + field.min + '" max="' + field.max +
+        '" data-field-id="' + escapeHtml(field.id) + '" aria-label="Level ' + entry.level + " " + escapeHtml(field.label) + '"><span class="level-delta" data-delta="' +
+        entry.level + "/" + stat + '">' + levelDelta(stat, entry.level) + "</span></td>").join("") + "</tr>").join("");
+    ui.statsList.innerHTML = '<div class="view-shell"><div class="view-bar">' + chipRow(ranges, query && rows.length === 1 ? "" : state.levelRange, "data-level-range") +
+      '<span class="view-hint">Totals at each level. The small number shows the gain from the previous level. Type a level in search to jump to it.</span></div>' +
+      '<div class="level-table-wrap"><table class="level-table"><thead>' + head + "</thead><tbody>" + body + "</tbody></table></div></div>";
+  }
+
+  function refreshLevelDeltas() {
+    ui.statsList.querySelectorAll("[data-delta]").forEach(span => {
+      const [level, stat] = span.dataset.delta.split("/").map(Number);
+      span.textContent = levelDelta(stat, level);
+    });
+  }
+
+  const BOOK_ORDER = [[1, "Fire"], [2, "Ice"], [3, "Thunder"], [4, "Wind"], [5, "Summoning"], [0, "Special"]];
+  function renderSpells(query) {
+    const entries = allStats("spells");
+    const spells = entries.filter(entry => entry.kind === "spell");
+    const weapons = entries.filter(entry => entry.kind === "subweapon");
+    const matches = entry => !query || [entry.name].concat(entry.fields.map(field => field.label)).join(" ").toLocaleLowerCase().includes(query);
+    const books = BOOK_ORDER.filter(([book]) => spells.some(entry => entry.book === book));
+    if (!books.some(([book]) => book === state.spellBook)) state.spellBook = books.length ? books[0][0] : 1;
+    const inBook = spells.filter(entry => (query ? true : entry.book === state.spellBook) && matches(entry));
+    const shown = inBook.length + weapons.filter(matches).length;
+    ui.statsCount.textContent = shown + " OF " + entries.length + " ENTRIES";
+    const columns = [["mp", "MP cost"], ["hearts", "Heart cost"], ["power", "Base power"]];
+    const spellRows = inBook.map(entry => {
+      const weapon = window.HodProfile.subweapons[entry.weapon];
+      const plain = entry.name === window.HodProfile.books[entry.book] + " · " + weapon;
+      const title = plain && !query ? (entry.weapon ? "With " + weapon : "Book only") : entry.name;
+      return '<tr><th scope="row"><span class="table-title">' + escapeHtml(title) + "</span>" +
+        (plain && !query ? '<span class="table-sub">' + escapeHtml(entry.name) + "</span>" : "") + "</th>" +
+        columns.map(([suffix]) => {
+          const field = fieldOf(entry, suffix);
+          return field ? '<td><input type="number" step="1" value="' + escapeHtml(field.value) + '" min="' + field.min + '" max="' + field.max + '" data-field-id="' +
+            escapeHtml(field.id) + '" aria-label="' + escapeHtml(entry.name + " " + field.label) + '"></td>' : '<td><span class="table-none" title="Base power is not mapped for this spell yet.">—</span></td>';
+        }).join("") + "</tr>";
+    }).join("");
+    const spellWeapons = new Set(spells.filter(entry => entry.book >= 1 && entry.book <= 5).map(entry => entry.weapon));
+    const weaponRows = weapons.filter(matches).map(entry => {
+      const ring = fieldOf(entry, "ring-hearts");
+      return '<tr><th scope="row"><span class="table-title">' + escapeHtml(window.HodProfile.subweapons[entry.weapon]) + "</span>" +
+        (spellWeapons.has(entry.weapon) ? "" : '<span class="table-badge">No spell fusion</span>') + "</th>" +
+        [fieldOf(entry, "hearts"), ring, fieldOf(entry, "power")].map(field => field
+          ? '<td><input type="number" step="1" value="' + escapeHtml(field.value) + '" min="' + field.min + '" max="' + field.max + '" data-field-id="' + escapeHtml(field.id) +
+            '" aria-label="' + escapeHtml(entry.name + " " + field.label) + '">' + (field === ring && entry.ring ? '<span class="table-sub">' + escapeHtml(entry.ring) + "</span>" : "") + "</td>"
+          : '<td><span class="table-none">—</span></td>').join("") + "</tr>";
+    }).join("");
+    const tabs = query ? '<span class="view-hint">Showing matches from every book.</span>' : chipRow(books, state.spellBook, "data-spell-book");
+    ui.statsList.innerHTML = '<div class="view-shell">' +
+      '<section class="view-section"><div class="view-bar">' + tabs + '<span class="view-hint">Spells are a book plus a subweapon. Base power scales with INT; 8 is 1× INT.</span></div>' +
+      (spellRows ? '<div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">Spell</th>' + columns.map(([, label]) => '<th scope="col">' + label + "</th>").join("") +
+        "</tr></thead><tbody>" + spellRows + "</tbody></table></div>" : emptyMarkup("⌕", "No spells found", "Try another book or a shorter search.")) + "</section>" +
+      '<section class="view-section"><div class="section-title"><h2>Subweapons</h2><span class="view-hint">Thrown with hearts. Ring costs apply while the matching ring is equipped.</span></div>' +
+      (weaponRows ? '<div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">Subweapon</th><th scope="col">Heart cost</th><th scope="col">With ring</th><th scope="col">Base power</th></tr></thead><tbody>' +
+        weaponRows + "</tbody></table></div>" : emptyMarkup("⌕", "No subweapons found", "Try a shorter search.")) + "</section></div>";
+  }
+
+  function renderItems(query) {
+    const entries = allStats("items");
+    const filtered = entries.filter(entry => !query || [entryTitle(entry), entry.group, (fieldOf(entry, "desc") || {}).value || ""].join(" ").toLocaleLowerCase().includes(query));
+    ui.statsCount.textContent = filtered.length + " OF " + entries.length + " ITEMS";
+    if (!filtered.length) {
+      ui.statsList.innerHTML = emptyMarkup("⌕", "No items found", "Try a shorter search.");
+      return;
+    }
+    if (!filtered.some(entry => entry.id === state.itemId)) state.itemId = filtered[0].id;
+    const selected = entries.find(entry => entry.id === state.itemId);
+    let list = "";
+    let group = null;
+    for (const entry of filtered) {
+      if (entry.group !== group) {
+        group = entry.group;
+        list += '<div class="item-group">' + escapeHtml(group) + "</div>";
+      }
+      list += '<button type="button" class="item-row' + (entry.id === state.itemId ? " is-selected" : "") + '" data-item-id="' + escapeHtml(entry.id) + '">' +
+        entryIcon(entry, 20) + '<span class="item-row-name" data-name-for="' + escapeHtml(entry.id) + '">' + escapeHtml(entryTitle(entry)) + "</span></button>";
+    }
+    const owner = entryTitle(selected);
+    const byRole = suffixes => suffixes.map(suffix => fieldOf(selected, suffix)).filter(Boolean);
+    const rest = selected.fields.filter(field => !["name", "desc", "icon", "palette", "str", "def", "int", "lck", "res", "element"]
+      .some(suffix => field.id === selected.id + "-" + suffix));
+    const equip = byRole(["str", "def", "int", "lck"]);
+    const bits = byRole(["res", "element"]);
+    const section = (title, body) => body ? '<section class="detail-section"><h3>' + title + '</h3><div class="stat-fields">' + body + "</div></section>" : "";
+    const iconField = fieldOf(selected, "icon");
+    const paletteField = fieldOf(selected, "palette");
+    let picker = "";
+    if (iconField && paletteField) {
+      let cells = "";
+      for (let index = 1; index <= 255; index++) {
+        const url = iconUrl(index, paletteField.value);
+        if (!url) continue;
+        cells += '<button type="button" class="icon-cell' + (index === iconField.value ? " is-selected" : "") + '" data-pick-icon="' + index + '" title="Icon ' + index +
+          '" aria-label="Icon ' + index + '"><img src="' + url + '" alt=""></button>';
+      }
+      picker = '<details class="icon-picker stat-field-wide"' + (state.iconPickerOpen ? " open" : "") + '><summary>Browse icons in palette ' + paletteField.value +
+        '</summary><div class="icon-grid">' + cells + "</div></details>";
+    }
+    const detail = '<header class="item-detail-header">' + entryIcon(selected, 64) + '<div><p class="eyebrow">' + escapeHtml(selected.group) + '</p><h2 data-name-for="' +
+      escapeHtml(selected.id) + '">' + escapeHtml(owner) + '</h2><span class="stat-id">' + escapeHtml(selected.id) + "</span></div></header>" +
+      section("Identity", byRole(["name", "desc"]).map(field => controlMarkup(field, owner)).join("") +
+        byRole(["icon", "palette"]).map(field => controlMarkup(field, owner)).join("") + picker) +
+      section("Item stats", rest.map(field => controlMarkup(field, owner)).join("")) +
+      section("Equip stats", equip.map(field => controlMarkup(field, owner)).join("") + bits.map(field => controlMarkup(field, owner)).join(""));
+    const scroll = ui.statsList.querySelector(".item-list");
+    const scrollTop = scroll ? scroll.scrollTop : 0;
+    ui.statsList.innerHTML = '<div class="items-layout"><nav class="item-list" aria-label="Items">' + list + '</nav><article class="item-detail">' + detail + "</article></div>";
+    const nextScroll = ui.statsList.querySelector(".item-list");
+    if (nextScroll) nextScroll.scrollTop = scrollTop;
+  }
+
+  function refreshItemChrome(entry) {
+    const title = entryTitle(entry);
+    ui.statsList.querySelectorAll('[data-name-for="' + CSS.escape(entry.id) + '"]').forEach(node => { node.textContent = title; });
+    ui.statsList.querySelectorAll('[data-icon-for="' + CSS.escape(entry.id) + '"]').forEach(node => {
+      const index = fieldOf(entry, "icon");
+      const palette = fieldOf(entry, "palette");
+      const url = index && palette ? iconUrl(index.value, palette.value) : "";
+      node.innerHTML = url ? '<img src="' + url + '" alt="">' : "";
+    });
+  }
+
   function renderStats() {
     const query = ui.statsSearch.value.trim().toLocaleLowerCase();
     const entries = allStats(state.category);
@@ -1163,6 +1414,9 @@
       return searchable.join(" ").toLocaleLowerCase().includes(query);
     });
     ui.statsCount.textContent = state.model ? filtered.length + " OF " + entries.length + " ENTRIES" : "—";
+    const custom = Boolean(state.model) && ["juste", "spells", "items"].includes(state.category);
+    ui.statsList.classList.toggle("is-custom", custom);
+    ui.statsSearch.placeholder = { juste: "Jump to level…", spells: "Search spells…", items: "Search items…" }[state.category] || "Search stats…";
     document.querySelectorAll(".category-button").forEach((button) => {
       const selected = button.dataset.category === state.category;
       button.classList.toggle("is-selected", selected);
@@ -1174,6 +1428,9 @@
       ui.statsList.innerHTML = '<div class="stats-empty"><span class="empty-crest" aria-hidden="true"><span>✧</span></span><strong>No ledger loaded</strong><span>Load a ROM to view editable stats.</span></div>';
       return;
     }
+    if (state.category === "juste") return renderLevels(query);
+    if (state.category === "spells") return renderSpells(query);
+    if (state.category === "items") return renderItems(query);
     if (!filtered.length) {
       ui.statsList.innerHTML = '<div class="stats-empty"><span class="empty-crest" aria-hidden="true"><span>⌕</span></span><strong>' + (query ? "No entries found" : "No records in this chapter") + '</strong><span>' + (query ? "Try a shorter search." : "Choose another category.") + '</span></div>';
       return;
@@ -1181,29 +1438,48 @@
 
     ui.statsList.innerHTML = filtered.map((entry) => {
       const fields = Array.isArray(entry.fields) ? entry.fields : [];
-      const controls = fields.map((field) => {
-        const min = field.min === undefined || field.min === null ? "" : ' min="' + escapeHtml(field.min) + '"';
-        const max = field.max === undefined || field.max === null ? "" : ' max="' + escapeHtml(field.max) + '"';
-        const note = field.note ? '<span class="stat-note">' + escapeHtml(field.note) + '</span>' : "";
-        return '<label class="stat-field"><span class="stat-field-label">' + escapeHtml(field.label || field.id) + '</span>' +
-          '<input type="number" step="1" value="' + escapeHtml(field.value) + '" data-field-id="' + escapeHtml(field.id) + '"' + min + max + ' aria-label="' + escapeHtml((entry.name || entry.id) + " " + (field.label || field.id)) + '">' + note + '</label>';
-      }).join("");
+      const controls = fields.map(field => controlMarkup(field, entry.name || entry.id)).join("");
       return '<article class="stat-card"><header class="stat-card-header"><h2>' + escapeHtml(entry.name || entry.id || "Unknown record") + '</h2><span class="stat-id">' + escapeHtml(entry.id || "") + '</span></header><div class="stat-fields">' + controls + '</div></article>';
     }).join("");
   }
 
+  function fillLazySelect(select) {
+    if (!select.dataset.lazy || select.dataset.filled) return;
+    const found = findField(select.dataset.fieldId);
+    if (!found) return;
+    select.innerHTML = optionMarkup(found.field.options, found.field.value);
+    select.dataset.filled = "true";
+  }
+
   function updateStat(input) {
     const fieldId = input.dataset.fieldId;
-    const value = integerInput(input);
-    if (value === null) {
-      renderStats();
-      showNotice("Enter a whole number.", "error");
-      return;
+    const found = findField(fieldId);
+    if (!found) return;
+    let value;
+    if (input.dataset.bit !== undefined) {
+      const bit = 1 << Number(input.dataset.bit);
+      value = input.checked ? (found.field.value | bit) : (found.field.value & ~bit);
+    } else if (found.field.kind === "text") {
+      value = input.value;
+    } else if (input instanceof HTMLSelectElement) {
+      value = Number(input.value);
+    } else {
+      value = integerInput(input);
+      if (value === null) {
+        renderStats();
+        showNotice("Enter a whole number.", "error");
+        return;
+      }
     }
     try {
       state.model.updateStat(fieldId, value);
       updateChrome();
-      showNotice("Stat updated.", "success");
+      if (state.category === "items") {
+        if (/-(icon|palette)$/.test(fieldId)) renderStats();
+        else refreshItemChrome(found.entry);
+      }
+      if (state.category === "juste") refreshLevelDeltas();
+      showNotice(found.field.kind === "text" ? "Text updated." : "Stat updated.", "success");
     } catch (error) {
       renderStats();
       showNotice(error.message || "Could not update this stat.", "error");
@@ -1224,6 +1500,8 @@
       const nextModel = await editor.open(bytes);
       if (!nextModel || !Array.isArray(nextModel.areas)) throw new Error("This ROM did not open as a Harmony of Dissonance project.");
       state.model = nextModel;
+      iconCache.clear();
+      state.itemId = "";
       state.fileName = file.name;
       state.areaFilter = nextModel.areas.some(area => area.castle === "A") ? "castle:A" : "all";
       state.roomId = null;
@@ -1358,6 +1636,48 @@
   ui.statsList.addEventListener("change", event => {
     const input = event.target.closest("[data-field-id]");
     if (input) updateStat(input);
+  });
+  ui.statsList.addEventListener("toggle", event => {
+    if (event.target.classList && event.target.classList.contains("icon-picker")) state.iconPickerOpen = event.target.open;
+  }, true);
+  ["focusin", "mousedown", "keydown"].forEach(type => ui.statsList.addEventListener(type, event => {
+    const select = event.target.closest && event.target.closest("select[data-lazy]");
+    if (select) fillLazySelect(select);
+  }));
+  ui.statsList.addEventListener("click", event => {
+    const range = event.target.closest("[data-level-range]");
+    if (range) {
+      state.levelRange = range.dataset.levelRange;
+      ui.statsSearch.value = "";
+      renderStats();
+      return;
+    }
+    const book = event.target.closest("[data-spell-book]");
+    if (book) {
+      state.spellBook = Number(book.dataset.spellBook);
+      renderStats();
+      return;
+    }
+    const pick = event.target.closest("[data-pick-icon]");
+    if (pick) {
+      try {
+        state.model.updateStat(state.itemId + "-icon", Number(pick.dataset.pickIcon));
+        state.iconPickerOpen = true;
+        updateChrome();
+        renderStats();
+        showNotice("Icon updated.", "success");
+      } catch (error) {
+        showNotice(error.message || "Could not change the icon.", "error");
+      }
+      return;
+    }
+    const item = event.target.closest("[data-item-id]");
+    if (item) {
+      state.itemId = item.dataset.itemId;
+      renderStats();
+      const next = ui.statsList.querySelector('[data-item-id="' + CSS.escape(state.itemId) + '"]');
+      if (next) next.focus();
+    }
   });
   ui.file.addEventListener("change", () => loadRom(ui.file.files && ui.file.files[0]));
   ui.undo.addEventListener("click", () => {
