@@ -105,6 +105,8 @@ globalThis.HodProfile = {
     0x2b: {gfx: [0x0811bbe0], palettes: [[0x08124d80, 0]]},
     0x2c: {gfx: [0x0811bd50], palettes: [[0x080df5e8, 1], [0x08125910, 0]]},
     0x2d: {gfx: [0x080f0a1c], palettes: [[0x081246ac, 0]]},
+    0x2f: {gfx: [0x0811bd60], palettes: [[0x081259d8, 0]]},
+    0x30: {gfx: [0x0811bd68], palettes: [[0x081259fc, 0]]},
     0x31: {gfx: [0x0811bd90], palettes: [[0x08125b0c, 0]]},
     0x32: {gfx: [0x0811bd50], palettes: [[0x080df5e8, 1], [0x08125910, 0]]},
     0x33: {gfx: [0x0811bd58], palettes: [[0x081259b4, 0]]},
