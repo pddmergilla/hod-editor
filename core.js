@@ -927,7 +927,10 @@
       const id = 'enemy-' + i;
       const row = {id, name: name + (i >= 125 ? ' · Maxim mode' : ''), fields: [
         field(id + '-hp', 'Max HP', at + 12, 'half', 1, 32767),
-        field(id + '-attack', 'Attack', at + 20, 'half', 0, 32767),
+        field(id + '-attack', 'Attack', at + 20, 'half', 0, 32767, 'Slot 1. Usually body contact.'),
+        field(id + '-attack2', 'Attack 2', at + 22, 'half', 0, 32767, 'Weapon or projectile slot.'),
+        field(id + '-attack3', 'Attack 3', at + 24, 'half', 0, 32767, 'Weapon or projectile slot.'),
+        field(id + '-attack4', 'Attack 4', at + 26, 'half', 0, 32767, 'Weapon or projectile slot.'),
         field(id + '-defense', 'Defense', at + 17, 'byte', 0, 255),
         field(id + '-xp', 'EXP', at + 14, 'half', 0, 65535),
         field(id + '-level', 'Level', at + 16, 'byte', 0, 255),
