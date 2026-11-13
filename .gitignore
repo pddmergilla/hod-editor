@@ -1,0 +1,19 @@
+# Local game files
+mainBIN/
+*.gba
+*.ppf
+*.sav
+*.srm
+
+# Local work
+.scratch*/
+work/
+handoff*.md
+general-handoff.md
+hod-editor/
+*.zip
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
