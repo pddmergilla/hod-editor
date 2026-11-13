@@ -17,7 +17,7 @@
   const SIGNATURES = [[0x1ec8, 0x08494d48], [0x3bc0, 0x08498d40]];
   const hex = (number, width = 2) => number.toString(16).toUpperCase().padStart(width, '0');
   const enemyBankEnemies = profile.enemyBankEnemies;
-  const isBankSubtype = subtype => Number.isInteger(subtype) && subtype >= 0 && subtype <= 255 &&
+  const isBankSubtype = subtype => Number.isInteger(subtype) && subtype >= 0 &&
     Object.prototype.hasOwnProperty.call(enemyBankEnemies, String(subtype)) && !profile.bosses.includes(subtype);
 
   function check(condition, message) {
@@ -254,11 +254,11 @@
     const bankSubtypes = Object.keys(enemyBankEnemies).map(Number).filter(isBankSubtype);
     const bankNameCounts = new Map();
     for (const subtype of bankSubtypes) {
-      const name = enemyName(subtype);
+      const name = enemyBankEnemies[subtype].label || enemyName(subtype);
       bankNameCounts.set(name, (bankNameCounts.get(name) || 0) + 1);
     }
     const bankEnemyLabel = subtype => {
-      const name = enemyName(subtype);
+      const name = enemyBankEnemies[subtype].label || enemyName(subtype);
       return bankNameCounts.get(name) > 1 ? name + ' · $' + hex(subtype) : name;
     };
     const candleAppearanceNames = new Map([
@@ -289,7 +289,10 @@
       }).filter(Boolean),
     ];
     const label = ({type, subtype, varA, varB}) => {
-      if (type === ENEMY) return enemyName(subtype);
+      if (type === ENEMY) {
+        if (subtype === 0x6a) return enemyBankEnemies[profile.enemyBankKey({type, subtype, varB})]?.label || 'Enemy Spawner';
+        return enemyName(subtype);
+      }
       if (type === PICKUP) return pickupName(subtype, varB);
       if (type === CANDLE) {
         const appearance = candleAppearanceNames.get(varA) || 'Breakable $' + hex(varA);
@@ -306,8 +309,13 @@
       check(room && Array.isArray(values) && values.length && values.every(isBankSubtype),
         'The enemy bank data contains an unsupported room or enemy.');
       const selected = new Set(values);
-      check(selected.size === values.length && room.entities.every(entity =>
-        entity.type !== ENEMY || !isBankSubtype(entity.subtype) || selected.has(entity.subtype)),
+      check(selected.size === values.length, 'The enemy bank data contains an unsupported room or enemy.');
+      for (const entity of room.entities) {
+        const key = profile.enemyBankKey(entity);
+        if (entity.type === ENEMY && entity.subtype === 0x6a && isBankSubtype(key)) selected.add(key);
+      }
+      check(room.entities.every(entity => entity.type !== ENEMY || !isBankSubtype(profile.enemyBankKey(entity)) ||
+        selected.has(profile.enemyBankKey(entity))),
       'The enemy bank data does not match this room.');
       savedBanks.set(id, selected);
     }
@@ -575,8 +583,8 @@
 
     function originalBankFor(id) {
       return savedBanks.get(id) || new Set([...baseTemplatesFor(id).values()]
-        .filter(template => template.type === ENEMY && isBankSubtype(template.subtype))
-        .map(template => template.subtype));
+        .filter(template => template.type === ENEMY && isBankSubtype(profile.enemyBankKey(template)))
+        .map(template => profile.enemyBankKey(template)));
     }
 
     function templatesFor(id) {
@@ -591,8 +599,9 @@
         .map(templateId));
       const selected = new Map();
       for (const [templateKey, template] of templates) {
-        const bankEnemy = template.type === ENEMY && isBankSubtype(template.subtype);
-        if (bankEnemy && !active.has(template.subtype)) continue;
+        const bankKey = profile.enemyBankKey(template);
+        const bankEnemy = template.type === ENEMY && isBankSubtype(bankKey);
+        if (bankEnemy && !active.has(bankKey)) continue;
         if (localIds.has(templateKey)) {
           selected.set(templateKey, template);
           continue;
@@ -636,11 +645,11 @@
       }
       const subtypes = new Set([...enemySubtypes, ...templates.map(template => template.subtype)]);
       return [...subtypes].sort((a, b) => a - b).map(subtype => {
-        const name = enemyNames[subtype];
+        const name = subtype === 0x6a ? 'Enemy Spawner' : enemyNames[subtype];
         const variants = bySubtype.get(subtype) || [];
         const choices = variants.map((template, index) => ({
           id: template.id,
-          label: variants.length > 1 ? 'Variant ' + (index + 1) : template.label,
+          label: subtype === 0x6a ? template.label : variants.length > 1 ? 'Variant ' + (index + 1) : template.label,
         }));
         return {subtype, label: name || 'Enemy $' + hex(subtype), available: choices.length > 0, variants: choices};
       });
@@ -651,7 +660,11 @@
     }
 
     function bankTemplate(subtype) {
-      return {type: ENEMY, subtype, up: 0, extra: 0, varA: enemyBankEnemies[subtype].varA ?? 0, varB: 0};
+      const descriptor = enemyBankEnemies[subtype];
+      return {
+        type: ENEMY, subtype: descriptor.subtype ?? subtype, up: 0, extra: 0,
+        varA: descriptor.varA ?? 0, varB: descriptor.varB ?? 0,
+      };
     }
 
     function bankSwap(room, rows, selected, source, target) {
@@ -659,7 +672,7 @@
       nextBank.delete(source);
       nextBank.add(target);
       const template = bankTemplate(target);
-      const nextRows = rows.map(entity => entity.type === ENEMY && entity.subtype === source
+      const nextRows = rows.map(entity => entity.type === ENEMY && profile.enemyBankKey(entity) === source
         ? place(template, entity.slot, entity.x, entity.y)
         : entity);
       return {nextBank, nextRows, resources: bankPlan(room, nextBank, nextRows)};

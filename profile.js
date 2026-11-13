@@ -150,6 +150,16 @@ globalThis.HodProfile = {
     0x15: {gfx: [0x080e8984], palettes: [[0x08123960, 0]]},
     0x39: {gfx: [0x0811bc98], palettes: [[0x08125348, 0]]},
   };
+  const spawners = [
+    [0x00, 'Bat Spawner'], [0x03, 'Medusa Head Spawner'], [0x04, 'Zombie Spawner'], [0x0a, 'Ghost Spawner'],
+    [0x15, 'Flying Skeleton Spawner'], [0x20, 'Mini Devil Spawner'], [0x39, 'Gold Medusa Spawner'],
+  ];
+  const enemyBankEnemies = {...enemies};
+  for (const [target, label] of spawners) {
+    enemyBankEnemies[0x100 + target] = {
+      ...(spawned[target] || enemies[target]), subtype: 0x6a, varB: target, label,
+    };
+  }
   const objects = {
     0x04: common,
     0x06: {gfx: [], palettes: [[0x08124528, 1]]},
@@ -222,26 +232,32 @@ globalThis.HodProfile = {
     return used <= 8;
   }
 
+  const enemyBankKey = entity => entity.subtype === 0x6a ? 0x100 + entity.varB : entity.subtype;
+
   function planEnemyBank(room, oldBank, newBank, entities, read) {
     const original = room.entities.map(entityAssets);
     const placed = entities.map(entityAssets);
     if ((room.flags & 0xff) === 5 || original.some(asset => !asset) || placed.some(asset => !asset)) {
       return {reason: 'This room has a boss, scripted enemy, or unverified prop.'};
     }
+    if (newBank.some(key => enemyBankEnemies[key]?.subtype === 0x6a) &&
+        ![0x66, 0x67].every(subtype => entities.some(entity => entity.type === 0 && entity.subtype === subtype))) {
+      return {reason: 'Spawners need this room’s spawn timers.'};
+    }
     const removed = oldBank.filter(subtype => !newBank.includes(subtype));
     const released = collectAssets([
-      ...removed.map(subtype => enemies[subtype]),
+      ...removed.map(subtype => enemyBankEnemies[subtype]),
       ...original.filter((_, index) => {
         const entity = room.entities[index];
-        return entity.type === 0 && removed.includes(entity.subtype);
+        return entity.type === 0 && removed.includes(enemyBankKey(entity));
       }),
     ]);
     const required = collectAssets([
-      ...newBank.map(subtype => enemies[subtype]),
+      ...newBank.map(subtype => enemyBankEnemies[subtype]),
       ...placed,
       ...original.filter((_, index) => {
         const entity = room.entities[index];
-        return entity.type !== 0 || !removed.includes(entity.subtype);
+        return entity.type !== 0 || !removed.includes(enemyBankKey(entity));
       }),
     ]);
     const gfx = [...new Set([
@@ -266,5 +282,5 @@ globalThis.HodProfile = {
     return {gfx, paletteEntries};
   }
 
-  Object.assign(globalThis.HodProfile, {enemyBankEnemies: enemies, planEnemyBank});
+  Object.assign(globalThis.HodProfile, {enemyBankEnemies, enemyBankKey, planEnemyBank});
 })();
