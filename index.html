@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#141413">
+  <title>Harmony of Dissonance · Field Editor</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="profile.js" defer></script>
+  <script src="core.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Harmony of Dissonance Field Editor home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 40 40" role="img"><path d="M20 3 33 10v17L20 36 7 27V10L20 3Z"/><path d="M15 14v12m10-12v12M15 20h10"/></svg>
+        </span>
+        <span class="brand-copy"><span class="eyebrow">FIELD EDITOR</span><strong>Harmony of Dissonance</strong></span>
+      </a>
+      <div class="top-actions">
+        <span class="local-tag"><span class="pulse-dot"></span>LOCAL SESSION</span>
+        <label class="button button-primary" for="rom-file" id="load-button">
+          <span class="button-icon" aria-hidden="true">＋</span><span id="load-label">Load .gba</span>
+          <input id="rom-file" type="file" accept=".gba,application/octet-stream" hidden>
+        </label>
+        <button class="button button-quiet" id="undo-button" type="button" disabled title="Undo the latest edit">
+          <span aria-hidden="true">↶</span><span>Undo</span>
+        </button>
+        <button class="button button-download" id="download-button" type="button" disabled>
+          <span aria-hidden="true">↓</span><span>Download ROM</span>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <section class="welcome-strip" aria-label="Editor status">
+        <div>
+          <p class="welcome-copy">Load a local .gba ROM to edit rooms and stats.</p>
+        </div>
+        <div class="session-state">
+          <span class="state-orb" id="state-orb"></span>
+          <div><span class="state-label" id="file-state">NO ROM LOADED</span><span class="state-detail" id="change-count">Your file stays on this device</span></div>
+        </div>
+      </section>
+
+      <nav class="main-tabs" role="tablist" aria-label="Editor sections">
+        <button class="main-tab is-active" id="map-tab" role="tab" aria-selected="true" aria-controls="map-panel" data-panel="map-panel" type="button">
+          <span class="tab-icon" aria-hidden="true">⌘</span>Map Editor
+        </button>
+        <button class="main-tab" id="stats-tab" role="tab" aria-selected="false" aria-controls="stats-panel" data-panel="stats-panel" type="button">
+          <span class="tab-icon" aria-hidden="true">✧</span>Stats Editor
+        </button>
+      </nav>
+
+      <section class="panel map-panel is-visible" id="map-panel" role="tabpanel" aria-labelledby="map-tab">
+        <div class="map-layout">
+          <aside class="room-sidebar" aria-label="Area and room browser">
+            <section class="area-section">
+              <h2>Area</h2>
+              <label class="area-select-label"><span class="sr-only">Area</span><select id="area-select" disabled><option value="">Load a ROM first</option></select></label>
+              <div class="area-note" id="area-name">Choose an area to browse its rooms.</div>
+            </section>
+            <section class="rooms-section" aria-label="Rooms">
+              <h2>Rooms <span class="sidebar-count" id="room-count">—</span></h2>
+              <label class="search-box">
+                <span class="search-glyph" aria-hidden="true">⌕</span>
+                <span class="sr-only">Search rooms</span>
+                <input id="room-search" type="search" placeholder="Search rooms…" autocomplete="off">
+                <kbd>/</kbd>
+              </label>
+              <div class="room-list" id="room-list" aria-live="polite">
+                <div class="list-empty"><strong>No ROM loaded</strong><span>Load a ROM to list its rooms.</span></div>
+              </div>
+            </section>
+            <section class="display-section" aria-label="Display">
+              <h2>Display</h2>
+              <label><input type="checkbox" id="show-entities" checked disabled> Entities</label>
+              <label class="collision-control" for="collision-toggle"><input id="collision-toggle" type="checkbox" disabled><span>Collision</span></label>
+            </section>
+          </aside>
+
+          <section class="map-workspace" aria-label="Room map">
+            <div class="room-toolbar">
+              <div class="map-room-info">
+                <span class="room-breadcrumb" id="room-breadcrumb">MAP</span>
+                <strong id="room-title">Choose a room</strong>
+                <small id="room-subtitle">Your map will appear here after a ROM is loaded.</small>
+              </div>
+              <div class="zoom-tools" role="group" aria-label="Map view controls">
+                <button id="scroll-up" type="button" title="Scroll map up" aria-label="Scroll map up" disabled>↑</button>
+                <button id="scroll-down" type="button" title="Scroll map down" aria-label="Scroll map down" disabled>↓</button>
+                <button id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out" disabled>−</button>
+                <span id="zoom-label" aria-live="polite">100%</span>
+                <button id="zoom-in" type="button" title="Zoom in" aria-label="Zoom in" disabled>+</button>
+              </div>
+            </div>
+            <div class="map-viewport" id="map-viewport">
+              <div class="map-empty">
+                <strong>No room selected</strong>
+                <span>Choose a room to see its layout and markers.</span>
+              </div>
+            </div>
+            <div class="map-status">
+              <span id="map-hint">Select a room from the index.</span>
+              <span class="map-coordinates" id="map-size">— × — PX</span>
+            </div>
+          </section>
+
+          <aside class="entity-sidebar" aria-label="Room entities">
+            <section class="entity-section">
+              <h2>Entities <span id="entity-count">0 markers</span></h2>
+              <div class="entity-panel-heading"><strong id="entity-room-title">No room selected</strong></div>
+              <section class="enemy-bank-panel" id="enemy-bank-panel" aria-label="Enemy bank">
+                <div class="enemy-bank-heading"><span class="subsection-label">ENEMY BANK</span><span class="enemy-bank-scope">ROOM WIDE</span></div>
+                <p class="enemy-bank-note">Add enemies here before placing them. Changing a slot replaces every copy.</p>
+                <div class="enemy-bank-add">
+                  <label class="field-label" for="enemy-bank-add-enemy">Add enemy</label>
+                  <select id="enemy-bank-add-enemy" disabled><option value="">Choose a room first</option></select>
+                  <p class="enemy-bank-hint" id="enemy-bank-add-hint">Choose a room to edit its bank.</p>
+                  <button class="button button-outline button-wide" id="enemy-bank-add-button" type="button" disabled>Add to Bank</button>
+                </div>
+                <p class="enemy-bank-empty" id="enemy-bank-empty">Choose a room to inspect its bank.</p>
+                <div class="enemy-bank-rows" id="enemy-bank-rows"></div>
+              </section>
+              <div class="entity-list" id="entity-list" role="listbox" aria-label="Current room entities">
+                <p class="muted-note">Choose a room to inspect its contents.</p>
+              </div>
+
+              <div class="selected-controls">
+                <div class="subsection-label">SELECTED ENTITY</div>
+                <p class="selected-name" id="selected-name">Nothing selected</p>
+                <label class="field-label" for="edit-type">Type</label>
+                <select id="edit-type" disabled><option value="">Choose an entity</option></select>
+                <div class="entity-kind-fields" id="edit-enemy-wrap" hidden>
+                  <label class="field-label" for="edit-enemy">Enemy</label>
+                  <select id="edit-enemy" disabled></select>
+                  <div class="variant-choice" id="edit-enemy-variant-wrap" hidden>
+                    <label class="field-label" for="edit-enemy-variant">Enemy variant</label>
+                    <select id="edit-enemy-variant" disabled></select>
+                  </div>
+                </div>
+                <div class="entity-kind-fields" id="edit-pickup-wrap" hidden>
+                  <label class="field-label" for="edit-pickup">Item</label>
+                  <select id="edit-pickup" disabled></select>
+                </div>
+                <div class="entity-kind-fields" id="edit-breakable-wrap" hidden>
+                  <label class="field-label" for="edit-appearance">Appearance</label>
+                  <select id="edit-appearance" disabled></select>
+                  <label class="field-label" for="edit-content">Contents</label>
+                  <select id="edit-content" disabled></select>
+                </div>
+                <div class="coordinate-fields">
+                  <label><span class="field-label">Room-local X</span><input id="edit-x" type="number" inputmode="numeric" min="-32768" max="32767" disabled></label>
+                  <label><span class="field-label">Room-local Y</span><input id="edit-y" type="number" inputmode="numeric" min="-32768" max="32767" disabled></label>
+                </div>
+                <button class="button button-primary button-wide" id="apply-entity" type="button" disabled>Apply Changes</button>
+              </div>
+
+              <div class="add-controls">
+                <div class="subsection-label">ADD AN ENTITY</div>
+                <label class="field-label" for="add-type">Type</label>
+                <select id="add-type" disabled><option value="">Choose a room first</option></select>
+                <div class="entity-kind-fields" id="add-enemy-wrap" hidden>
+                  <label class="field-label" for="add-enemy">Enemy</label>
+                  <select id="add-enemy" disabled></select>
+                  <div class="variant-choice" id="add-enemy-variant-wrap" hidden>
+                    <label class="field-label" for="add-enemy-variant">Enemy variant</label>
+                    <select id="add-enemy-variant" disabled></select>
+                  </div>
+                </div>
+                <div class="entity-kind-fields" id="add-pickup-wrap" hidden>
+                  <label class="field-label" for="add-pickup">Item</label>
+                  <select id="add-pickup" disabled></select>
+                </div>
+                <div class="entity-kind-fields" id="add-breakable-wrap" hidden>
+                  <label class="field-label" for="add-appearance">Appearance</label>
+                  <select id="add-appearance" disabled></select>
+                  <label class="field-label" for="add-content">Contents</label>
+                  <select id="add-content" disabled></select>
+                </div>
+                <div class="coordinate-fields">
+                  <label><span class="field-label">Room-local X</span><input id="add-x" type="number" inputmode="numeric" value="32" min="0" max="32767" disabled></label>
+                  <label><span class="field-label">Room-local Y</span><input id="add-y" type="number" inputmode="numeric" value="32" min="0" max="32767" disabled></label>
+                </div>
+                <div class="rowbuttons">
+                  <button class="button button-primary" id="add-entity" type="button" disabled>Add</button>
+                  <button class="button button-outline" id="duplicate-entity" type="button" disabled>Duplicate</button>
+                  <button class="button button-danger" id="remove-entity" type="button" disabled>Delete</button>
+                </div>
+                <p class="capacityHint" id="entity-capacity-hint">Choose a room to inspect its entity slots.</p>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </section>
+      <section class="panel stats-panel" id="stats-panel" role="tabpanel" aria-labelledby="stats-tab" hidden>
+        <div class="stats-heading">
+          <div class="section-heading">
+            <div><h1>Stats Editor</h1><p class="stats-intro">Edits stay in this tab until you download a ROM.</p></div>
+          </div>
+          <label class="search-box stats-search">
+            <span class="search-glyph" aria-hidden="true">⌕</span><span class="sr-only">Search stat entries</span>
+            <input id="stats-search" type="search" placeholder="Search stats…" autocomplete="off"><kbd>/</kbd>
+          </label>
+        </div>
+        <div class="stats-toolbar">
+          <div class="stats-categories" role="tablist" aria-label="Stat category">
+            <button type="button" class="category-button is-selected" data-category="juste" aria-selected="true">Juste</button>
+            <button type="button" class="category-button" data-category="enemies" aria-selected="false">Enemies</button>
+            <button type="button" class="category-button" data-category="bosses" aria-selected="false">Bosses</button>
+            <button type="button" class="category-button" data-category="spells" aria-selected="false">Spells</button>
+            <button type="button" class="category-button" data-category="items" aria-selected="false">Items</button>
+          </div>
+          <span class="ledger-count" id="stats-count">—</span>
+        </div>
+        <div class="stats-list" id="stats-list">
+          <div class="stats-empty"><strong>No ROM loaded</strong><span>Load a ROM to view editable stats.</span></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-brand"><span>Edits are downloaded as a separate GBA file.</span></div>
+      <div class="credits">
+        <span class="eyebrow">WITH THANKS TO</span>
+        <a href="https://github.com/LagoLunatic/DSVEdit" target="_blank" rel="noreferrer">DSVEdit <span aria-hidden="true">↗</span></a>
+        <a href="https://www.romhackplaza.org/romhacks/castlevania-harmony-of-dissonance-visual-improvement-game-boy-advance-romhack" target="_blank" rel="noreferrer">Visual Improvement <span aria-hidden="true">↗</span></a>
+        <a href="https://github.com/alexarroyoduque/REharmonized/releases/tag/1.3.1" target="_blank" rel="noreferrer">REharmonized 1.3.1 <span aria-hidden="true">↗</span></a>
+        <span class="credit-pending" title="Earlier Lure Key and Hint Card 3">Better Fast Travel <small>bundled notes</small></span>
+      </div>
+    </footer>
+  </div>
+  <div class="live-notice" id="live-notice" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
