@@ -16,7 +16,7 @@ Your ROM stays on your computer. The editor does not upload it.
 
 - Room artwork, enemy and pickup placement, and entity copy/paste.
 - Room enemy banks with graphics and palette capacity checks.
-- Seven named enemy spawner choices, including Medusa Head Spawner. These require rooms with existing spawn timers.
+- Seven named enemy spawner choices, including Medusa Head Spawner. A new spawn area adds its timers and companion marker automatically, using four entity slots. Existing timers are reused.
 - Player progression, enemy and boss stats, spell costs, and supported spell power fields.
 - Undo and exports that can be reopened for further editing.
 
@@ -29,6 +29,8 @@ Your ROM stays on your computer. The editor does not upload it.
 - `app.js`: editor controls.
 
 There is no build step or package installation. Unsupported ROMs are rejected by compatibility checks.
+
+Each room shares one spawner type. Moving an endpoint moves its timer too; deleting a spawner removes the room's spawner group. Undo restores the whole action.
 
 ROMs, patches, saves, and extracted game assets are not included. Gameplay changes should be checked in-game after export.
 

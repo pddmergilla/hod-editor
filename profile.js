@@ -22,6 +22,11 @@ globalThis.HodProfile = {
   enemies: 0xc7e38,
   bosses: [0x09, 0x11, 0x1e, 0x1f, 0x28, 0x2e, 0x36, 0x37, 0x42, 0x43, 0x44,
     0x49, 0x53, 0x54, 0x55, 0x56, 0x57, 0x60, 0x61, 0x62, 0x63, 0x77],
+  spawnTimerDefaults: {
+    0x66: {varA: 2, varB: 100},
+    0x67: {varA: 2, varB: 100},
+  },
+  spawnTimerNames: {0x66: 'Spawn Timer · Start', 0x67: 'Spawn Timer · End'},
   spells: 0xe29d4,
   // Subweapon throw records: 8 x 12 bytes, +1 is the heart cost. The second table is used
   // while the matching ring is equipped. Base power is the attack kind's byte at 0xE2504 + kind * 4.
@@ -157,7 +162,8 @@ globalThis.HodProfile = {
   const enemyBankEnemies = {...enemies};
   for (const [target, label] of spawners) {
     enemyBankEnemies[0x100 + target] = {
-      ...(spawned[target] || enemies[target]), subtype: 0x6a, varB: target, label,
+      ...(spawned[target] || enemies[target]), subtype: 0x6a, varA: target === 0 ? 1 : 0,
+      varB: target, label,
     };
   }
   const objects = {
@@ -239,10 +245,6 @@ globalThis.HodProfile = {
     const placed = entities.map(entityAssets);
     if ((room.flags & 0xff) === 5 || original.some(asset => !asset) || placed.some(asset => !asset)) {
       return {reason: 'This room has a boss, scripted enemy, or unverified prop.'};
-    }
-    if (newBank.some(key => enemyBankEnemies[key]?.subtype === 0x6a) &&
-        ![0x66, 0x67].every(subtype => entities.some(entity => entity.type === 0 && entity.subtype === subtype))) {
-      return {reason: 'Spawners need this room’s spawn timers.'};
     }
     const removed = oldBank.filter(subtype => !newBank.includes(subtype));
     const released = collectAssets([

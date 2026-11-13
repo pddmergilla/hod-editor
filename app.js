@@ -586,7 +586,18 @@
     }
     return !adding && type === "1" && currentEntity && currentEntity.type === 1;
   }
-  function renderEntityControls(room, entities) {
+  function entityAddCost(room, template, options) {
+    const remaining = Math.max(0, 31 - roomEntities(room).length);
+    if (!state.model || typeof state.model.getEntityAddCost !== "function") {
+      return {slotsNeeded: 1, remaining, fits: remaining >= 1, isSpawner: false};
+    }
+    try {
+      return state.model.getEntityAddCost(room.id, template, options);
+    } catch (error) {
+      return {slotsNeeded: 0, remaining, fits: false, isSpawner: false, reason: error.message};
+    }
+  }
+  function renderEntityControls(room, entities, coordinates = {}) {
     const selectedEntity = room && Number.isInteger(state.entityIndex) ? entities[state.entityIndex] : null;
     const selectedKey = selectedEntity ? room.id + ":" + state.entityIndex : "";
     if (state.editDraftKey !== selectedKey) {
@@ -606,38 +617,63 @@
       : '<option value="">Choose an entity</option>';
     ui.editType.value = selectedEntity ? state.editDraft.type : "";
     ui.editType.disabled = !selectedEntity;
-    ui.editX.value = selectedEntity ? numeric(selectedEntity.x, 0) : "";
-    ui.editY.value = selectedEntity ? numeric(selectedEntity.y, 0) : "";
+    ui.editX.value = selectedEntity ? (coordinates.editX ?? numeric(selectedEntity.x, 0)) : "";
+    ui.editY.value = selectedEntity ? (coordinates.editY ?? numeric(selectedEntity.y, 0)) : "";
     ui.editX.disabled = !selectedEntity;
     ui.editY.disabled = !selectedEntity;
     renderChoiceFields("edit", room, state.editDraft, Boolean(selectedEntity), selectedEntity);
+    const editTemplate = state.editDraft && String(state.editDraft.type) === "0"
+      ? state.editDraft.templateId : null;
+    const editCost = selectedEntity ? entityAddCost(room, editTemplate, {
+      x: numeric(ui.editX.value, selectedEntity.x), y: numeric(ui.editY.value, selectedEntity.y),
+      replaceIndex: state.entityIndex,
+    }) : null;
     ui.applyEntity.disabled = !selectedEntity ||
-      !draftIsValid(room, state.editDraft, selectedEntity, false);
+      !draftIsValid(room, state.editDraft, selectedEntity, false) || !editCost.fits;
     const templates = room ? roomTemplates(room) : [];
     ui.addType.innerHTML = room ? entityTypeOptions(state.addDraft && state.addDraft.type, true)
       : '<option value="">Choose a room first</option>';
     ui.addType.disabled = !room;
     if (room && state.addDraft) ui.addType.value = state.addDraft.type;
     renderChoiceFields("add", room, state.addDraft, Boolean(room), null);
+    if (coordinates.addX !== undefined) ui.addX.value = coordinates.addX;
+    if (coordinates.addY !== undefined) ui.addY.value = coordinates.addY;
     const dimensions = room ? roomDimensions(room) : {width: 1, height: 1};
     ui.addX.max = String(dimensions.width - 1);
     ui.addY.max = String(dimensions.height - 1);
-    ui.addX.disabled = !room || entities.length >= 31;
-    ui.addY.disabled = !room || entities.length >= 31;
     if (room) {
       const x = Number(ui.addX.value);
       const y = Number(ui.addY.value);
       if (!Number.isFinite(x) || x > dimensions.width - 1) ui.addX.value = String(Math.min(32, dimensions.width - 1));
       if (!Number.isFinite(y) || y > dimensions.height - 1) ui.addY.value = String(Math.min(32, dimensions.height - 1));
     }
-    const canAdd = Boolean(room && entities.length < 31 &&
+    const addTemplate = state.addDraft && String(state.addDraft.type) === "0"
+      ? state.addDraft.templateId : null;
+    const addCost = room ? entityAddCost(room, addTemplate, {
+      x: numeric(ui.addX.value, 0), y: numeric(ui.addY.value, 0),
+    }) : null;
+    ui.addX.disabled = !room || entities.length >= 31;
+    ui.addY.disabled = !room || entities.length >= 31;
+    const canAdd = Boolean(room && addCost.fits &&
       draftIsValid(room, state.addDraft, null, true));
     ui.addEntity.disabled = !canAdd;
-    ui.duplicateEntity.disabled = !selectedEntity || entities.length >= 31;
+    const duplicateAt = selectedEntity ? duplicatePosition(selectedEntity, dimensions) : null;
+    const duplicateCost = selectedEntity ? entityAddCost(room, selectedEntity, duplicateAt) : null;
+    ui.duplicateEntity.disabled = !selectedEntity || !duplicateCost.fits;
     ui.removeEntity.disabled = !selectedEntity;
-    ui.capacityHint.textContent = room
-      ? (31 - entities.length) + " of 31 entity slots available."
-      : "Choose a room to inspect its entity slots.";
+    if (!room) {
+      ui.capacityHint.textContent = "Choose a room to inspect its entity slots.";
+    } else if (addCost && addCost.reason) {
+      ui.capacityHint.textContent = addCost.reason;
+    } else if (addCost && addCost.isSpawner) {
+      ui.capacityHint.textContent = "Spawner timers are added automatically. This needs " +
+        addCost.slotsNeeded + " entity slots total; " + addCost.remaining + " available.";
+    } else if (editCost && editCost.isSpawner && editCost.slotsNeeded) {
+      ui.capacityHint.textContent = "Missing spawner timers are added automatically. This needs " +
+        editCost.slotsNeeded + " extra entity slots; " + editCost.remaining + " available.";
+    } else {
+      ui.capacityHint.textContent = (31 - entities.length) + " of 31 entity slots available.";
+    }
     renderEnemyBank(room);
   }
   function renderEnemyBank(room) {
@@ -1037,9 +1073,13 @@
       values.varB = reward[1];
     }
     try {
+      const beforeCount = roomEntities(room).length;
       const index = state.model.addTypedEntity(room.id, values, x, y);
-      state.entityIndex = Number.isInteger(index) ? index : roomEntities(room).length - 1;
-      afterEdit("Entity added to " + (room.name || "the room") + ".");
+      const rows = roomEntities(room);
+      state.entityIndex = Number.isInteger(index) ? index : rows.length - 1;
+      const added = rows[state.entityIndex];
+      const bundledSpawner = added && added.type === 0 && added.subtype === 0x6a && rows.length - beforeCount > 1;
+      afterEdit(bundledSpawner ? "Spawner and timers added." : "Entity added to " + (room.name || "the room") + ".");
     } catch (error) {
       showNotice(error.message || "Could not add this entity.", "error");
     }
@@ -1129,11 +1169,13 @@
   function removeEntity() {
     const room = currentRoom();
     if (!room || !Number.isInteger(state.entityIndex)) return;
+    const selected = currentSelectedEntity(room);
     try {
       state.model.removeEntity(room.id, state.entityIndex);
       state.entityIndex = null;
       state.editDraftKey = "";
-      afterEdit("Entity removed.");
+      afterEdit(selected && selected.type === 0 && selected.subtype === 0x6a
+        ? "Spawner and timers removed." : "Entity removed.");
     } catch (error) {
       showNotice(error.message || "Could not remove this entity.", "error");
     }
@@ -1144,13 +1186,7 @@
     const editY = ui.editY.value;
     const addX = ui.addX.value;
     const addY = ui.addY.value;
-    renderEntityControls(room, entities);
-    if (prefix === "edit") {
-      ui.editX.value = editX;
-      ui.editY.value = editY;
-    }
-    ui.addX.value = addX;
-    ui.addY.value = addY;
+    renderEntityControls(room, entities, {editX, editY, addX, addY});
   }
   function changeDraftType(prefix) {
     const room = currentRoom();
@@ -1653,6 +1689,8 @@
   ui.zoomIn.addEventListener("click", () => setZoom(state.zoom + 25));
   ui.editType.addEventListener("change", () => changeDraftType("edit"));
   ui.addType.addEventListener("change", () => changeDraftType("add"));
+  [ui.editX, ui.editY].forEach(input => input.addEventListener("input", () => refreshEntityControls("edit")));
+  [ui.addX, ui.addY].forEach(input => input.addEventListener("input", () => refreshEntityControls("add")));
   [
     ["edit", ui.editEnemy, "enemy"], ["edit", ui.editEnemyVariant, "variant"],
     ["edit", ui.editPickup, "pickup"], ["edit", ui.editAppearance, "appearance"],

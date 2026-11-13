@@ -290,6 +290,7 @@
     ];
     const label = ({type, subtype, varA, varB}) => {
       if (type === ENEMY) {
+        if (profile.spawnTimerNames[subtype]) return profile.spawnTimerNames[subtype];
         if (subtype === 0x6a) return enemyBankEnemies[profile.enemyBankKey({type, subtype, varB})]?.label || 'Enemy Spawner';
         return enemyName(subtype);
       }
@@ -542,6 +543,12 @@
         if (!donors.get(id).rooms.includes(room)) donors.get(id).rooms.push(room);
       }
     }
+    const spawnTimerDonors = new Map();
+    for (const donor of donors.values()) {
+      if (donor.type === ENEMY && profile.spawnTimerDefaults[donor.subtype] && !spawnTimerDonors.has(donor.subtype)) {
+        spawnTimerDonors.set(donor.subtype, donor);
+      }
+    }
     for (const [key, item] of itemNames) {
       if (!item) continue;
       const [subtype, varB] = key.split('/').map(Number);
@@ -645,7 +652,7 @@
       }
       const subtypes = new Set([...enemySubtypes, ...templates.map(template => template.subtype)]);
       return [...subtypes].sort((a, b) => a - b).map(subtype => {
-        const name = subtype === 0x6a ? 'Enemy Spawner' : enemyNames[subtype];
+        const name = subtype === 0x6a ? 'Enemy Spawner' : profile.spawnTimerNames[subtype] || enemyNames[subtype];
         const variants = bySubtype.get(subtype) || [];
         const choices = variants.map((template, index) => ({
           id: template.id,
@@ -672,9 +679,22 @@
       nextBank.delete(source);
       nextBank.add(target);
       const template = bankTemplate(target);
-      const nextRows = rows.map(entity => entity.type === ENEMY && profile.enemyBankKey(entity) === source
+      const replacesEntities = rows.some(entity => entity.type === ENEMY && profile.enemyBankKey(entity) === source);
+      let nextRows = rows.map(entity => entity.type === ENEMY && profile.enemyBankKey(entity) === source
         ? place(template, entity.slot, entity.x, entity.y)
         : entity);
+      try {
+        if (isSpawner(template) && replacesEntities) {
+          checkSpawnerSpecies(nextRows, template);
+          const marker = nextRows.find(isSpawner);
+          if (marker) nextRows = addMissingSpawnerHelpers(room, nextRows, marker);
+          check(nextRows.length <= MAX_ENTITIES, 'The spawner and its timers need more entity slots. This room holds 31.');
+        } else if (enemyBankEnemies[source]?.subtype === 0x6a && rows.some(isSpawner) && !nextRows.some(isSpawner)) {
+          nextRows = nextRows.filter(entity => !isSpawnerTimer(entity));
+        }
+      } catch (error) {
+        return {nextBank, nextRows: rows, resources: {reason: error.message}};
+      }
       return {nextBank, nextRows, resources: bankPlan(room, nextBank, nextRows)};
     }
 
@@ -801,15 +821,109 @@
       integer(y, -32768, 32767, 'Y');
     }
 
-    function insertEntity(id, template, x, y) {
-      coordinates(x, y);
-      const rows = getEntities(id);
-      check(rows.length < MAX_ENTITIES, 'This room is at the 31-entity limit.');
+    const isSpawner = entity => entity.type === ENEMY && entity.subtype === 0x6a;
+    const isSpawnerTimer = entity => entity.type === ENEMY && (entity.subtype === 0x66 || entity.subtype === 0x67);
+
+    function checkSpawnerSpecies(rows, marker) {
+      check(rows.filter(isSpawner).every(entity => entity.varA === marker.varA && entity.varB === marker.varB),
+        'A room can use only one spawner type. Change the room bank to replace the whole group.');
+    }
+
+    function appendPlaced(rows, template, x, y) {
       const used = new Set(rows.map(entity => entity.slot));
       let slot = 0;
       while (used.has(slot)) slot++;
-      editRoom(id, [...rows, place(template, slot, x, y)]);
-      return rows.length;
+      rows.push(place(template, slot, x, y));
+    }
+
+    function addMissingSpawnerHelpers(room, input, marker) {
+      checkSpawnerSpecies(input, marker);
+      integer(marker.x, 0, room.pixelWidth - 1, 'Spawner X');
+      integer(marker.y, 0, room.pixelHeight - 1, 'Spawner Y');
+      const missing = [0x66, 0x67].filter(subtype => !input.some(entity =>
+        entity.type === ENEMY && entity.subtype === subtype));
+      if (!missing.length) return input;
+      const rows = input.slice();
+      const axis = room.width < room.height ? 'y' : 'x';
+      const length = axis === 'x' ? room.pixelWidth : room.pixelHeight;
+      const lower = 8;
+      const upper = length - 8;
+      const nearStart = marker[axis] <= length / 2;
+      for (const subtype of missing) {
+        const point = {x: marker.x, y: marker.y};
+        point[axis] = missing.length === 2
+          ? ((subtype === 0x66) === nearStart ? marker[axis] : nearStart ? upper : lower)
+          : subtype === 0x66 ? lower : upper;
+        if (!rows.some(entity => isSpawner(entity) && entity.x === point.x && entity.y === point.y)) {
+          appendPlaced(rows, marker, point.x, point.y);
+        }
+        appendPlaced(rows, {
+          type: ENEMY, subtype, up: 0, extra: 0, ...profile.spawnTimerDefaults[subtype],
+        }, point.x, point.y);
+      }
+      return rows;
+    }
+
+    function placementRows(id, template, x, y, replaceIndex, checkCapacity = true) {
+      coordinates(x, y);
+      const room = roomById(id);
+      const rows = getEntities(id).slice();
+      const replacing = replaceIndex !== undefined;
+      const index = replacing ? replaceIndex : rows.length;
+      const current = replacing ? rows[index] : null;
+      check(replacing || !isSpawnerTimer(template) || !rows.some(isSpawner),
+        'Timers are shared with the spawner. Duplicate the spawner instead.');
+      if (replacing) {
+        check(current, 'Select an entity first.');
+        check(!isSpawner(current) || isSpawner(template), 'Delete the spawner group before changing its type.');
+        check(!isSpawnerTimer(current) || template.type === current.type && template.subtype === current.subtype,
+          'Delete the spawner to remove its timers.');
+        rows[index] = place(template, current.slot, x, y, current);
+        if (isSpawner(current) || isSpawnerTimer(current)) {
+          for (let i = 0; i < rows.length; i++) {
+            if (i === index) continue;
+            const entity = rows[i];
+            const paired = isSpawner(current) ? isSpawnerTimer(entity) : isSpawner(entity);
+            if (paired && entity.x === current.x && entity.y === current.y) {
+              rows[i] = {...entity, x, y};
+            }
+          }
+        }
+      } else {
+        appendPlaced(rows, template, x, y);
+      }
+      const nextRows = isSpawner(template) ? addMissingSpawnerHelpers(room, rows, rows[index]) : rows;
+      if (checkCapacity) check(nextRows.length <= MAX_ENTITIES, isSpawner(template)
+        ? 'The spawner and its timers need more entity slots. This room holds 31.' : 'This room is at the 31-entity limit.');
+      return {rows: nextRows, index};
+    }
+
+    function getEntityAddCost(id, templateOrId, options = {}) {
+      const currentRows = getEntities(id);
+      const remaining = MAX_ENTITIES - currentRows.length;
+      const template = typeof templateOrId === 'string' ? getTemplate(id, templateOrId) : templateOrId;
+      const replacing = options.replaceIndex !== undefined;
+      if (!template) {
+        const slotsNeeded = replacing ? 0 : 1;
+        return {slotsNeeded, remaining, fits: slotsNeeded <= remaining, isSpawner: false};
+      }
+      try {
+        const plan = placementRows(id, template, options.x ?? 32, options.y ?? 32, options.replaceIndex, false);
+        const slotsNeeded = plan.rows.length - currentRows.length;
+        const fits = slotsNeeded <= remaining;
+        return {slotsNeeded, remaining, fits, isSpawner: isSpawner(template),
+          reason: fits ? undefined : 'This needs ' + slotsNeeded + ' entity slots; ' + remaining + ' available.'};
+      } catch (error) {
+        return {slotsNeeded: isSpawner(template) ? 1 + [0x66, 0x67].filter(subtype =>
+          !currentRows.some(entity => entity.type === ENEMY && entity.subtype === subtype)).length : 1,
+          remaining, fits: false, isSpawner: isSpawner(template), reason: error.message};
+      }
+    }
+
+    function insertEntity(id, template, x, y) {
+      const plan = placementRows(id, template, x, y);
+      editRoom(id, plan.rows);
+      return plan.index;
     }
 
     function addEntity(id, template, x, y) {
@@ -867,8 +981,8 @@
       else if (nextId && nextId !== templateId(current)) template = getTemplate(id, nextId);
       const changed = place(template, current.slot, x, y, current);
       if (!sameEntity(changed, current)) {
-        rows[index] = changed;
-        editRoom(id, rows);
+        const plan = placementRows(id, template, x, y, index);
+        editRoom(id, plan.rows);
       }
       return index;
     }
@@ -876,7 +990,9 @@
     function removeEntity(id, index) {
       const rows = getEntities(id);
       check(rows[index], 'Select an entity first.');
-      editRoom(id, rows.filter((_, i) => i !== index));
+      check(!isSpawnerTimer(rows[index]) || !rows.some(isSpawner), 'Delete the spawner to remove its timers.');
+      editRoom(id, isSpawner(rows[index]) ? rows.filter(entity => !isSpawner(entity) && !isSpawnerTimer(entity))
+        : rows.filter((_, i) => i !== index));
     }
 
     function swapEnemyBank(id, sourceSubtype, targetSubtype) {
@@ -1284,7 +1400,7 @@
     }
 
     return {
-      areas, stats, getEntities, getTemplates, getEnemyOptions, getEnemyBank, getEnemyBankAddOptions,
+      areas, stats, getEntities, getTemplates, getEnemyOptions, getEnemyBank, getEnemyBankAddOptions, getEntityAddCost,
       getBreakableOptions, renderRoomArt, renderItemIcon,
       addEntity, addTypedEntity, duplicateEntity, pasteEntity, updateEntity, updateTypedEntity: updateEntity, removeEntity,
       swapEnemyBank, addEnemyToBank, updateStat, build,
