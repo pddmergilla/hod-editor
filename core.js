@@ -383,6 +383,102 @@
       });
     }
 
+    const entityArtCache = new Map();
+    const spritePageCache = new Map();
+
+    function spritePage(pointer) {
+      if (spritePageCache.has(pointer)) return spritePageCache.get(pointer);
+      const at = read.offset(pointer, 8);
+      check(read.byte(at + 1) === 4, 'Unsupported sprite colors.');
+      const kind = read.byte(at);
+      check(kind === 0 || kind === 1, 'Unsupported sprite artwork.');
+      const size = read.byte(at + 3) * 512;
+      const start = kind === 0 ? read.offset(pointer + 4, size) : null;
+      const data = kind === 1 ? decompressedAt(read.word(at + 4)) : bytes.subarray(start, start + size);
+      spritePageCache.set(pointer, data);
+      return data;
+    }
+
+    function renderEntitySprite(entity) {
+      if (entity.type === PICKUP) {
+        let icon;
+        if (entity.subtype === 9 && entity.varB <= 1) {
+          icon = renderItemIcon(0x0c + entity.varB, 1);
+        } else {
+          const group = profile.items.find(([type]) => type === entity.subtype);
+          if (!group || entity.varB >= group[3]) return null;
+          const prefix = {3: 'consumable-', 4: 'whip-', 5: 'equip-'}[entity.subtype] || 'item' + entity.subtype + '-';
+          const id = prefix + entity.varB;
+          const at = group[2] + entity.varB * group[4];
+          icon = renderItemIcon(statEdits.get(id + '-icon') ?? read.byte(at + 2),
+            statEdits.get(id + '-palette') ?? read.byte(at + 3));
+        }
+        return icon ? {...icon, x: -8, y: -16} : null;
+      }
+      const spec = profile.entitySpriteInfo(entity);
+      if (!spec) return null;
+      const key = JSON.stringify(spec);
+      if (entityArtCache.has(key)) return entityArtCache.get(key);
+      let result = null;
+      try {
+        const header = read.offset(spec.sprite, 12);
+        const count = read.half(header);
+        check(count > 0 && count < 256 && spec.frame < count, 'Unsupported sprite frame.');
+        const frame = read.offset(read.word(header + 4) + spec.frame * 12, 12);
+        const partCount = read.half(frame + 4);
+        check(partCount > 0 && partCount <= 128, 'Unsupported sprite parts.');
+        const first = read.offset(read.word(frame + 8), partCount * 12);
+        const parts = Array.from({length: partCount}, (_, i) => {
+          const at = first + i * 12;
+          const signed = value => value < 128 ? value : value - 256;
+          return {x: signed(read.byte(at)), y: signed(read.byte(at + 1)),
+            gx: read.byte(at + 4) & ~7, gy: read.byte(at + 5) & ~7,
+            w: read.byte(at + 6), h: read.byte(at + 7),
+            page: read.byte(at + 9), flips: read.byte(at + 10)};
+        });
+        check(parts.every(p => p.w > 0 && p.w <= 64 && p.h > 0 && p.h <= 64 && p.page < spec.gfx.length),
+          'Unsupported sprite dimensions.');
+        const x = Math.min(...parts.map(p => p.x));
+        const y = Math.min(...parts.map(p => p.y));
+        const width = Math.max(...parts.map(p => p.x + p.w)) - x;
+        const height = Math.max(...parts.map(p => p.y + p.h)) - y;
+        const pixels = new Uint8ClampedArray(width * height * 4);
+        const palette = read.offset(spec.palette, 4);
+        check(spec.paletteOffset >= 0 && spec.paletteOffset < read.byte(palette + 2), 'Unsupported sprite palette.');
+        const colors = read.offset(spec.palette + 4 + spec.paletteOffset * 32, 32);
+        const pages = spec.gfx.map(spritePage);
+        // Draw back parts first.
+        for (const part of parts.reverse()) {
+          const data = pages[part.page];
+          for (let py = 0; py < part.h; py++) {
+            for (let px = 0; px < part.w; px++) {
+              const sx = part.gx + (part.flips & 2 ? part.w - 1 - px : px);
+              const sy = part.gy + (part.flips & 1 ? part.h - 1 - py : py);
+              if (sx >= 128 || sy >= 128) continue;
+              const address = ((sy >> 3) * 16 + (sx >> 3)) * 32 + (sy & 7) * 4 + ((sx & 7) >> 1);
+              if (address >= data.length) continue;
+              const color = (data[address] >>> ((sx & 1) * 4)) & 15;
+              if (!color) continue;
+              const rgb = read.half(colors + color * 2);
+              const out = ((part.y - y + py) * width + part.x - x + px) * 4;
+              for (let c = 0; c < 3; c++) {
+                const five = (rgb >>> (c * 5)) & 31;
+                pixels[out + c] = (five << 3) | (five >> 2);
+              }
+              pixels[out + 3] = 255;
+            }
+          }
+        }
+        if (pixels.some((value, index) => index % 4 === 3 && value)) {
+          result = {x: x + (spec.x || 0), y: y + (spec.y || 0), width, height, pixels};
+        }
+      } catch (error) {
+        // Keep invisible helpers selectable.
+      }
+      entityArtCache.set(key, result);
+      return result;
+    }
+
     function renderRoomArt(id) {
       const room = roomById(id);
       const layerListAt = read.offset(read.word(room.at + 8), 24);
@@ -1401,7 +1497,7 @@
 
     return {
       areas, stats, getEntities, getTemplates, getEnemyOptions, getEnemyBank, getEnemyBankAddOptions, getEntityAddCost,
-      getBreakableOptions, renderRoomArt, renderItemIcon,
+      getBreakableOptions, renderRoomArt, renderItemIcon, renderEntitySprite,
       addEntity, addTypedEntity, duplicateEntity, pasteEntity, updateEntity, updateTypedEntity: updateEntity, removeEntity,
       swapEnemyBank, addEnemyToBank, updateStat, build,
       undo() { history.pop()?.(); },

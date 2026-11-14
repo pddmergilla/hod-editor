@@ -380,3 +380,9 @@ a { color: var(--ink); }
 .icon-cell:hover { border-color: var(--line-strong); background: rgba(255, 255, 255, .04); }
 .icon-cell.is-selected { border-color: var(--amber); background: rgba(217, 119, 87, .12); }
 .icon-cell img { width: 22px; height: 22px; image-rendering: pixelated; }
+
+.entity-sprite { image-rendering: pixelated; }
+.entity-marker.has-sprite .marker-halo, .entity-marker.has-sprite .marker-core { opacity: .25; }
+.entity-marker.has-sprite .marker-label { opacity: 0; }
+.entity-marker.has-sprite:hover .marker-label, .entity-marker.has-sprite.is-selected .marker-label, .entity-marker.has-sprite:focus-visible .marker-label { opacity: 1; }
+.entity-marker.has-sprite:hover .marker-halo, .entity-marker.has-sprite.is-selected .marker-halo, .entity-marker.has-sprite:focus-visible .marker-halo { opacity: 1; }

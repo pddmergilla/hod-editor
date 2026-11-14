@@ -15,6 +15,7 @@ Your ROM stays on your computer. The editor does not upload it.
 ## Features
 
 - Room artwork, enemy and pickup placement, and entity copy/paste.
+- Actual ROM sprites at room scale for enemies, pickups, breakables, and supported objects. Sprites move and zoom with their placement markers. Helpers and unsupported artwork keep their markers; hover or select a sprite to see its label.
 - Room enemy banks with graphics and palette capacity checks.
 - Seven named enemy spawner choices, including Medusa Head Spawner. A new spawn area adds its timers and companion marker automatically, using four entity slots. Existing timers are reused.
 - Player progression, enemy and boss stats, spell costs, and supported spell power fields.

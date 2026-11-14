@@ -372,14 +372,48 @@
     }
   }
 
+  const entitySpriteCache = new WeakMap();
+
+  function entitySpritePreview(entity) {
+    if (!state.model || typeof state.model.renderEntitySprite !== "function") return null;
+    let cache = entitySpriteCache.get(state.model);
+    if (!cache || cache.revision !== state.model.changeCount) {
+      cache = new Map();
+      cache.revision = state.model.changeCount;
+      entitySpriteCache.set(state.model, cache);
+    }
+    const key = [entity.type, entity.subtype, entity.varA, entity.varB, entity.up, entity.extra].join("/");
+    if (cache.has(key)) return cache.get(key);
+    let preview = null;
+    try {
+      const art = state.model.renderEntitySprite(entity);
+      if (art && art.width > 0 && art.height > 0) {
+        const canvas = document.createElement("canvas");
+        canvas.width = art.width;
+        canvas.height = art.height;
+        const context = canvas.getContext("2d");
+        const data = context.createImageData(art.width, art.height);
+        data.data.set(art.pixels);
+        context.putImageData(data, 0, 0);
+        preview = {...art, pixels: undefined, dataUrl: canvas.toDataURL("image/png")};
+      }
+    } catch (error) {
+      // Keep the placement marker.
+    }
+    cache.set(key, preview);
+    return preview;
+  }
+
   function markerMarkup(entity, index) {
     const x = numeric(entity.x, 0);
     const y = numeric(entity.y, 0);
     const selected = index === state.entityIndex;
     const label = escapeHtml(entityLabelShort(entity, index));
     const kind = typeClass(entity.type);
-    return '<g class="entity-marker type-' + kind + (selected ? ' is-selected' : '') + '" data-index="' + index + '" tabindex="0" role="button" aria-label="' + escapeHtml(labelForEntity(entity, index)) + ', x ' + x + ', y ' + y + '" aria-pressed="' + selected + '">' +
-      '<circle class="marker-halo" cx="' + x + '" cy="' + y + '" r="8"/><circle class="marker-core" cx="' + x + '" cy="' + y + '" r="4"/>' +
+    const art = entitySpritePreview(entity);
+    const sprite = art ? '<image class="entity-sprite" href="' + art.dataUrl + '" x="' + (x + art.x) + '" y="' + (y + art.y) + '" width="' + art.width + '" height="' + art.height + '" image-rendering="pixelated"/>' : "";
+    return '<g class="entity-marker type-' + kind + (art ? ' has-sprite' : '') + (selected ? ' is-selected' : '') + '" data-index="' + index + '" tabindex="0" role="button" aria-label="' + escapeHtml(labelForEntity(entity, index)) + ', x ' + x + ', y ' + y + '" aria-pressed="' + selected + '">' +
+      sprite + '<circle class="marker-halo" cx="' + x + '" cy="' + y + '" r="8"/><circle class="marker-core" cx="' + x + '" cy="' + y + '" r="4"/>' +
       '<text class="marker-label" x="' + (x + 9) + '" y="' + (y - 7) + '">' + label + '</text></g>';
   }
   function renderRoomSvg(room, dimensions, entities, preview) {
@@ -1044,6 +1078,7 @@
     renderMapWorkspace();
   }
   function afterEdit(message) {
+    if (state.model) entitySpriteCache.delete(state.model);
     state.editDraftKey = "";
     updateChrome();
     renderRoomList();
@@ -1543,6 +1578,7 @@
     }
     try {
       state.model.updateStat(fieldId, value);
+      entitySpriteCache.delete(state.model);
       updateChrome();
       if (state.category === "items") {
         if (/-(icon|palette)$/.test(fieldId)) renderStats();
@@ -1735,6 +1771,7 @@
     if (pick) {
       try {
         state.model.updateStat(state.itemId + "-icon", Number(pick.dataset.pickIcon));
+        entitySpriteCache.delete(state.model);
         state.iconPickerOpen = true;
         updateChrome();
         renderStats();
@@ -1757,6 +1794,7 @@
     if (!state.model) return;
     try {
       state.model.undo();
+      entitySpriteCache.delete(state.model);
       state.entityIndex = null;
       state.editDraftKey = "";
       resetEnemyAddDraft(currentRoom());
