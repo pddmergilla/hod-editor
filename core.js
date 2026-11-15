@@ -1341,6 +1341,8 @@
         field(id + '-attack3', 'Attack 3', at + 24, 'half', 0, 32767, 'Weapon or projectile slot.'),
         field(id + '-attack4', 'Attack 4', at + 26, 'half', 0, 32767, 'Weapon or projectile slot.'),
         field(id + '-defense', 'Defense', at + 17, 'byte', 0, 255),
+        Object.assign(field(id + '-weaknesses', 'Elemental weaknesses', at + 33, 'byte', 0, 255), {bits: ELEMENTS.map((name, bit) => ({bit, name}))}),
+        Object.assign(field(id + '-resistances', 'Elemental resistances', at + 32, 'byte', 0, 255), {bits: ELEMENTS.map((name, bit) => ({bit, name}))}),
         field(id + '-xp', 'EXP', at + 14, 'half', 0, 65535),
         field(id + '-level', 'Level', at + 16, 'byte', 0, 255),
         dropField(id + '-drop1-item', 'Drop 1', at + 8),
