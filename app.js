@@ -783,9 +783,11 @@
           (choice.reason ? ' title="' + escapeHtml(choice.reason) + '"' : "") + '>' +
           escapeHtml(label + reason) + '</option>';
       }).join("");
-      return '<label class="enemy-bank-row"><span class="enemy-bank-label">' + escapeHtml(sourceLabel) + '</span>' +
-        '<select data-source-subtype="' + sourceSubtype + '" aria-label="Replace every ' + escapeHtml(sourceLabel) + ' in this room with">' +
-        options + '</select></label>';
+      return '<div class="enemy-bank-row"><span class="enemy-bank-label">' + escapeHtml(sourceLabel) + '</span>' +
+        '<div class="enemy-bank-controls"><select data-source-subtype="' + sourceSubtype + '" aria-label="Replace every ' + escapeHtml(sourceLabel) + ' in this room with">' +
+        options + '</select><button type="button" class="button button-quiet" data-remove-bank-subtype="' + sourceSubtype +
+        '" aria-label="Remove ' + escapeHtml(sourceLabel) + ' from this room bank and all placed copies"' +
+        ' title="Removes this bank entry and all placed copies. Undo restores them.">Remove</button></div></div>';
     }).join("");
   }
   function updateEnemyBankAddState(addable, optionCount) {
@@ -838,6 +840,28 @@
   function resetEnemyAddDraft(room) {
     if (state.addDraft && String(state.addDraft.type) === "0") {
       state.addDraft = draftFor(room, "0", null);
+    }
+  }
+  function removeEnemyFromBank(button) {
+    const room = currentRoom();
+    if (!room || !button) return;
+    const subtype = Number(button.dataset.removeBankSubtype);
+    if (!Number.isInteger(subtype)) return;
+    try {
+      const row = state.model.getEnemyBank(room.id).find(row => Number(row.subtype) === subtype);
+      if (!row) return;
+      state.model.removeEnemyFromBank(room.id, subtype);
+      state.entityIndex = null;
+      state.editDraftKey = "";
+      resetEnemyAddDraft(room);
+      updateChrome();
+      renderRoomList();
+      renderMapWorkspace();
+      ui.enemyBankAddEnemy.focus();
+      showNotice("Removed " + row.label + " and its placed copies. Undo restores them.", "success");
+    } catch (error) {
+      renderMapWorkspace();
+      showNotice(error.message || "Could not remove this enemy bank slot.", "error");
     }
   }
   function swapEnemyBank(select) {
@@ -1697,6 +1721,10 @@
   ui.entityList.addEventListener("click", event => {
     const button = event.target.closest("[data-index]");
     if (button) selectEntity(Number(button.dataset.index));
+  });
+  ui.enemyBankRows.addEventListener("click", event => {
+    const button = event.target.closest("[data-remove-bank-subtype]");
+    if (button) removeEnemyFromBank(button);
   });
   ui.enemyBankRows.addEventListener("change", event => {
     const select = event.target.closest("[data-source-subtype]");

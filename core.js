@@ -307,7 +307,7 @@
     const savedBanks = new Map();
     for (const [id, values] of Object.entries(savedBankRooms || {})) {
       const room = rooms.get(id);
-      check(room && Array.isArray(values) && values.length && values.every(isBankSubtype),
+      check(room && Array.isArray(values) && values.every(isBankSubtype),
         'The enemy bank data contains an unsupported room or enemy.');
       const selected = new Set(values);
       check(selected.size === values.length, 'The enemy bank data contains an unsupported room or enemy.');
@@ -1101,6 +1101,19 @@
       editRoom(id, nextRows, nextBank, resources);
     }
 
+    function removeEnemyFromBank(id, subtype) {
+      const selected = customBankFor(id) || originalBankFor(id);
+      check(isBankSubtype(subtype) && selected.has(subtype), 'Choose an enemy bank slot.');
+      const nextBank = new Set(selected);
+      nextBank.delete(subtype);
+      const rows = getEntities(id);
+      let nextRows = rows.filter(entity => entity.type !== ENEMY || profile.enemyBankKey(entity) !== subtype);
+      if (rows.some(isSpawner) && !nextRows.some(isSpawner)) {
+        nextRows = nextRows.filter(entity => !isSpawnerTimer(entity));
+      }
+      editRoom(id, nextRows, nextBank);
+    }
+
     function addEnemyToBank(id, subtype) {
       check(isBankSubtype(subtype), 'Choose a supported enemy.');
       const selected = customBankFor(id) || originalBankFor(id);
@@ -1501,7 +1514,7 @@
       areas, stats, getEntities, getTemplates, getEnemyOptions, getEnemyBank, getEnemyBankAddOptions, getEntityAddCost,
       getBreakableOptions, renderRoomArt, renderItemIcon, renderEntitySprite,
       addEntity, addTypedEntity, duplicateEntity, pasteEntity, updateEntity, updateTypedEntity: updateEntity, removeEntity,
-      swapEnemyBank, addEnemyToBank, updateStat, build,
+      swapEnemyBank, addEnemyToBank, removeEnemyFromBank, updateStat, build,
       undo() { history.pop()?.(); },
       get canUndo() { return history.length > 0; },
       get changeCount() {

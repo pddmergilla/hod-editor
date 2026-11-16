@@ -166,7 +166,9 @@ a { color: var(--ink); }
 .enemy-bank-rows { display: flex; flex-direction: column; gap: 7px; }
 .enemy-bank-row { display: block; min-width: 0; color: var(--ink); font-size: 10px; }
 .enemy-bank-label { display: block; overflow: hidden; margin-bottom: 3px; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; }
-.enemy-bank-row select { margin-top: 0; }
+.enemy-bank-controls { display: flex; align-items: center; gap: 5px; }
+.enemy-bank-controls select { flex: 1; width: 0; min-width: 0; margin-top: 0; }
+.enemy-bank-controls button { flex-shrink: 0; min-height: 30px; padding: 0 7px; font-size: 10px; }
 .subsection-label { margin-bottom: 9px; color: var(--ink); font-size: 9px; font-weight: 700; letter-spacing: .12em; }
 .field-label { display: block; margin: 8px 0 5px; color: var(--ink); font-size: 11px; }
 .coordinate-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
