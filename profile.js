@@ -242,10 +242,11 @@ globalThis.HodProfile = {
 
   const enemyBankKey = entity => entity.subtype === 0x6a ? 0x100 + entity.varB : entity.subtype;
 
-  function planEnemyBank(room, oldBank, newBank, entities, read) {
+  function planEnemyBank(room, oldBank, newBank, entities, read, removeOnly = false) {
     const original = room.entities.map(entityAssets);
     const placed = entities.map(entityAssets);
     if ((room.flags & 0xff) === 5 || original.some(asset => !asset) || placed.some(asset => !asset)) {
+      if (removeOnly) return {gfx: room.gfx, paletteEntries: room.paletteEntries};
       return {reason: 'This room has a boss, scripted enemy, or unverified prop.'};
     }
     const removed = oldBank.filter(subtype => !newBank.includes(subtype));
@@ -266,9 +267,9 @@ globalThis.HodProfile = {
     ]);
     const gfx = [...new Set([
       ...room.gfx.filter(pointer => !released.gfx.has(pointer) || required.gfx.has(pointer)),
-      ...required.gfx,
+      ...(removeOnly ? [] : required.gfx),
     ])];
-    if (!fitsEnemyGraphics(gfx, read)) return {reason: 'These sprites exceed the room’s graphics budget.'};
+    if (!removeOnly && !fitsEnemyGraphics(gfx, read)) return {reason: 'These sprites exceed the room’s graphics budget.'};
 
     const occupied = new Map();
     const paletteEntries = room.paletteEntries.filter(([header, pointer]) => {
@@ -282,7 +283,7 @@ globalThis.HodProfile = {
     });
     const loaded = new Set(occupied.values());
     const newPaletteCount = [...required.palettes].filter(key => !loaded.has(key)).length;
-    if (occupied.size + newPaletteCount > 4) return {reason: 'These enemies exceed the room’s four palette slots.'};
+    if (!removeOnly && occupied.size + newPaletteCount > 4) return {reason: 'These enemies exceed the room’s four palette slots.'};
     return {gfx, paletteEntries};
   }
 

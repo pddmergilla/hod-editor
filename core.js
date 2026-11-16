@@ -1111,7 +1111,10 @@
       if (rows.some(isSpawner) && !nextRows.some(isSpawner)) {
         nextRows = nextRows.filter(entity => !isSpawnerTimer(entity));
       }
-      editRoom(id, nextRows, nextBank);
+      const room = roomById(id);
+      const current = {...room, ...(roomResourceEdits.get(id) || {}), entities: rows};
+      const resources = profile.planEnemyBank(current, [...selected], [...nextBank], nextRows, read, true);
+      editRoom(id, nextRows, nextBank, resources);
     }
 
     function addEnemyToBank(id, subtype) {
