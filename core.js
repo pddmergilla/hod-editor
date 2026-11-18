@@ -1702,11 +1702,33 @@
       const field = dialogueFields.get(id);
       const parts = dialogueParts(id);
       check(Array.isArray(values) && values.length === parts.length, 'Reload this dialogue before editing.');
+      const story = id >= 10 && id < 0x22;
+      const deleting = values.some(value => value?.deleted === true);
+      if (deleting) {
+        check(story, 'Only story dialogue blocks can be deleted.');
+        check(values.some(value => typeof value === 'string' ? value : !value?.deleted && value?.text),
+          'Keep at least one text block in the scene.');
+      }
       let speaker = null, portrait = null;
+      let hasText = false;
+      let removedPrefix = null;
       const text = parts.map((part, index) => {
         const value = typeof values[index] === 'string' ? {text: values[index]} : values[index];
         check(value && typeof value.text === 'string', 'Dialogue must be text.');
         check(part.text || !value.text, 'This part is reserved for scene actions.');
+        if (value.deleted === true) {
+          check(part.text, 'This part is reserved for scene actions.');
+          removedPrefix ??= [];
+          for (let i = 0; i < part.prefix.length; i++) {
+            const command = part.prefix[i];
+            const size = multipartCommands.has(command) ? 2 : 1;
+            if (command !== 0xf003 && command !== 0xf007) {
+              removedPrefix.push(...part.prefix.slice(i, i + size));
+            }
+            i += size - 1;
+          }
+          return '';
+        }
         const nextSpeaker = value.speaker === undefined ? part.speaker : value.speaker;
         const nextPortrait = value.portrait === undefined ? part.portrait : value.portrait;
         const canChange = id > 10 && id < 0x22 && Boolean(part.text) && part.speaker !== null && part.portrait !== null;
@@ -1716,10 +1738,17 @@
           integer(nextSpeaker, 0, 9, 'Speaker');
           integer(nextPortrait, 1, 6, 'Portrait');
         }
-        const prefix = part.prefix.slice();
+        const joined = removedPrefix !== null;
+        const prefix = joined ? joinDialoguePrefixes(removedPrefix.concat(part.prefix), hasText) : part.prefix.slice();
+        removedPrefix = null;
         const positions = new Map();
         for (let i = 0; i < prefix.length; i++) {
           const command = prefix[i];
+          if (joined && command === 0xf004) {
+            speaker = null;
+            portrait = null;
+            positions.clear();
+          }
           if (!multipartCommands.has(command)) continue;
           const arg = prefix[++i];
           if (command === 0xf007) {speaker = arg; positions.set(command, i);}
@@ -1735,10 +1764,33 @@
           setChoice(0xf007, speaker, nextSpeaker);
           portrait = nextPortrait; speaker = nextSpeaker;
         }
-        return prefix.map(rawWord).join('') + dialogueText(value.text, id >= 10 && id < 0x22);
+        hasText ||= Boolean(value.text);
+        return prefix.map(rawWord).join('') + dialogueText(value.text, story);
       }).join('');
-      encodeText(text, field);
-      return {field, text};
+      const tail = removedPrefix ? joinDialoguePrefixes(removedPrefix, hasText).map(rawWord).join('') : '';
+      encodeText(text + tail, field);
+      return {field, text: text + tail};
+    }
+    function joinDialoguePrefixes(commands, hasText) {
+      const prefix = [];
+      let pageTurn = -1;
+      for (let i = 0; i < commands.length; i++) {
+        const command = commands[i];
+        if (command === 0xf005 && (commands[i + 1] === 0xf004 || commands[i + 1] === 0xf009)) {
+          const nextPage = commands[++i];
+          if (!hasText) continue;
+          if (pageTurn === -1) {
+            prefix.push(command, nextPage);
+            pageTurn = prefix.length - 1;
+          } else if (nextPage === 0xf004) {
+            prefix[pageTurn] = nextPage;
+          }
+        } else {
+          prefix.push(command);
+          if (multipartCommands.has(command)) prefix.push(commands[++i]);
+        }
+      }
+      return prefix;
     }
     function updateDialogue(id, values) {
       const {field, text} = validateDialogue(id, values);

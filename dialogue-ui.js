@@ -23,13 +23,17 @@
     const entry = model.getDialogue(selected), names = rows().slice(0, 10);
     const draft = drafts.get(selected);
     const story = entry.category === 'Story dialogue';
+    const canDelete = story && entry.parts.filter((part, index) => part.text && !draft?.[index].deleted).length > 1;
     detail.innerHTML = '<h2>' + escape(entry.category) + ' · ' + selected + '</h2>' +
       '<p>Rewrite the text freely. Longer text is saved in extra ROM space. Keep lines short enough for the game’s text box.</p>' +
       (story ? '<p>Scene actions stay protected. Choose a speaker and portrait for each character block. Use “Next page” to continue with the same speaker. The preview below is a reading guide; Dev checks the final layout in-game.</p>' : '<p>Menu and name boxes keep their original size in-game. Longer wording may run outside them.</p>') +
       entry.parts.map((part, index) => {
         if (!part.text) return '';
-        const speaker = part.speaker === null ? 'Text' : names[part.speaker]?.text || 'Unknown speaker';
         const value = draft ? draft[index] : part;
+        if (value.deleted) return '<div class="dialogue-tools">Block ' + (index + 1) +
+          ' marked for deletion <button type="button" class="button button-quiet" data-dialogue-delete="' + index +
+          '">Restore block</button></div>';
+        const speaker = part.speaker === null ? 'Text' : names[part.speaker]?.text || 'Unknown speaker';
         const canChange = story && selected !== 10 && part.speaker !== null && part.portrait !== null;
         const portraits = ['Juste', 'Maxim', 'Possessed Maxim', 'Death', 'Lydie', 'Dracula Wraith'];
         const choices = canChange ? '<div class="dialogue-tools"><label for="dialogue-speaker-' + index + '">Speaker<select id="dialogue-speaker-' + index + '" data-dialogue-speaker="' + index + '">' +
@@ -40,7 +44,10 @@
           '</label>' + choices + '<textarea id="dialogue-text-' + index + '" data-dialogue-part="' + index + '" rows="5" spellcheck="true">' + escape(value.text) +
           '</textarea><div class="dialogue-tools">' + (story ? '<button type="button" class="button button-quiet" data-dialogue-page="' + index + '">Next page</button>' : '') +
           '<label>Insert name <select data-dialogue-name="' + index + '"><option value="">Choose…</option>' + names.filter(row => row.text).map(row =>
-          '<option value="' + row.id + '">' + escape(row.text) + '</option>').join('') + '</select></label></div><small data-dialogue-length="' + index + '"></small>' +
+          '<option value="' + row.id + '">' + escape(row.text) + '</option>').join('') + '</select></label>' +
+          (story ? '<button type="button" class="button button-danger" data-dialogue-delete="' + index + '"' +
+            (canDelete ? '' : ' disabled title="Keep at least one text block in the scene."') + '>Delete block</button>' : '') +
+          '</div><small data-dialogue-length="' + index + '"></small>' +
           '<pre class="dialogue-preview" data-dialogue-preview="' + index + '"></pre></section>';
       }).join('') + '<button type="button" class="button button-outline" id="dialogue-apply">Apply text edits</button>' +
       '<p id="dialogue-message" role="status" aria-live="polite">' + (draft ? 'Draft changes — apply or download to save them.' : 'Edits are saved to your downloaded copy.') + '</p>';
@@ -57,15 +64,24 @@
     detail.querySelector('[data-dialogue-length="' + index + '"]').textContent = [...area.value].length + ' typed characters · ' + pages.length +
       (pages.length === 1 ? ' page' : ' pages') + (crowded ? ' · Check line width and height in-game.' : ' · Check the final layout in-game.');
   }
+  function draftValues(parts) {
+    return drafts.get(selected) || parts.map(({text, speaker, portrait}) => ({text, speaker, portrait}));
+  }
+  function saveDraft(parts, values) {
+    if (values.every((value, index) => !value.deleted && ['text', 'speaker', 'portrait'].every(key => value[key] === parts[index][key]))) {
+      drafts.delete(selected);
+    } else {
+      drafts.set(selected, values);
+    }
+  }
   function remember(area) {
     const parts = model.getDialogue(selected).parts;
-    const values = drafts.get(selected) || parts.map(({text, speaker, portrait}) => ({text, speaker, portrait}));
+    const values = draftValues(parts);
     const index = Number(area.dataset.dialoguePart);
     values[index] = {text: area.value,
       speaker: byId('dialogue-speaker-' + index) ? Number(byId('dialogue-speaker-' + index).value) : parts[index].speaker,
       portrait: byId('dialogue-portrait-' + index) ? Number(byId('dialogue-portrait-' + index).value) : parts[index].portrait};
-    if (values.every((value, index) => ['text', 'speaker', 'portrait'].every(key => value[key] === parts[index][key]))) drafts.delete(selected);
-    else drafts.set(selected, values);
+    saveDraft(parts, values);
     byId('dialogue-apply').disabled = !drafts.has(selected);
     error(drafts.has(selected) ? 'Draft changes — apply or download to save them.' : 'Edits are saved to your downloaded copy.');
     updatePreview(area);
@@ -100,6 +116,17 @@
   detail.addEventListener('click', event => {
     const page = event.target.closest('[data-dialogue-page]');
     if (page) insert(page.dataset.dialoguePage, '{PAGE}');
+    const remove = event.target.closest('[data-dialogue-delete]');
+    if (remove && !remove.disabled) {
+      const parts = model.getDialogue(selected).parts;
+      const values = draftValues(parts);
+      const index = Number(remove.dataset.dialogueDelete);
+      values[index].deleted = !values[index].deleted;
+      saveDraft(parts, values);
+      listEntries();
+      drawDetail();
+      detail.querySelector('[data-dialogue-delete="' + index + '"]')?.focus();
+    }
     if (event.target.id === 'dialogue-apply') {
       try {apply(selected); listEntries(); drawDetail(); error('Text edits applied. Download ROM to save a copy.');}
       catch (failure) {error(failure.message);}
