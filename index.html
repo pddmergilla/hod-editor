@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="styles.css">
   <script src="profile.js" defer></script>
   <script src="core.js" defer></script>
+  <script src="dialogue-ui.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -52,6 +53,7 @@
         <button class="main-tab" id="stats-tab" role="tab" aria-selected="false" aria-controls="stats-panel" data-panel="stats-panel" type="button">
           <span class="tab-icon" aria-hidden="true">✧</span>Stats Editor
         </button>
+        <button class="main-tab" id="dialogue-tab" role="tab" aria-selected="false" aria-controls="dialogue-panel" data-panel="dialogue-panel" type="button">Dialogue Editor</button>
       </nav>
 
       <section class="panel map-panel is-visible" id="map-panel" role="tabpanel" aria-labelledby="map-tab">
@@ -244,6 +246,10 @@
         <div class="stats-list" id="stats-list">
           <div class="stats-empty"><strong>No ROM loaded</strong><span>Load a ROM to view editable stats.</span></div>
         </div>
+      </section>
+      <section class="panel dialogue-panel" id="dialogue-panel" role="tabpanel" aria-labelledby="dialogue-tab" hidden>
+        <div class="stats-heading"><div><h1>Dialogue Editor</h1><p>All 24 story scripts, plus character names and other game text.</p></div><button id="dialogue-export" type="button" class="button button-outline" disabled>Download text list</button></div>
+        <div class="dialogue-layout"><aside class="dialogue-sidebar"><label for="dialogue-search">Search dialogue</label><input type="search" id="dialogue-search" placeholder="Search words or entry number…" disabled><label for="dialogue-category">Text category</label><select id="dialogue-category" disabled><option>Story dialogue</option><option>Character names</option><option>Menus and shop</option><option>Item names</option><option>Item descriptions</option><option>Enemy names</option><option>Music names</option><option value="">All text</option></select><p id="dialogue-count"></p><div id="dialogue-list"></div></aside><div id="dialogue-detail"></div></div>
       </section>
     </main>
 

@@ -196,7 +196,10 @@
     ui.download.disabled = !loaded;
   }
 
+  document.addEventListener("hod-dialogue-change", () => {updateChrome(); renderStats();});
+
   function switchPanel(panelId) {
+    if (panelId === "dialogue-panel") window.HodDialogueUI.render(state.model);
     document.querySelectorAll(".main-tab").forEach((button) => {
       const active = button.dataset.panel === panelId;
       button.classList.toggle("is-active", active);
@@ -1833,6 +1836,7 @@
       updateChrome();
       renderMap();
       renderStats();
+      window.HodDialogueUI.render(state.model);
       showNotice("ROM loaded. Choose a room or edit a stat.", "success");
     } catch (error) {
       showNotice(error.message || "Could not open this ROM.", "error");
@@ -1846,6 +1850,7 @@
   function downloadRom() {
     if (!state.model) return;
     try {
+      window.HodDialogueUI.applyAll();
       const bytes = state.model.build();
       if (!(bytes instanceof Uint8Array)) throw new Error("The ROM could not be built.");
       const stem = state.fileName.replace(/\.gba$/i, "");
@@ -2016,6 +2021,7 @@
       updateChrome();
       renderMap();
       renderStats();
+      window.HodDialogueUI.render(state.model, true);
       showNotice("Undid the latest edit.", "success");
     } catch (error) {
       showNotice(error.message || "Could not undo that edit.", "error");
@@ -2032,7 +2038,7 @@
       state.tileCopy = false; state.collisionCopy = false; state.tileGesture = null;
       if (!state.drag) {renderMapWorkspace(); return;}
     }
-    if (!typing && byId("stats-panel").hidden && state.mapMode !== "entities" && state.model && !event.altKey && (event.ctrlKey || event.metaKey)) {
+    if (!typing && !byId("map-panel").hidden && state.mapMode !== "entities" && state.model && !event.altKey && (event.ctrlKey || event.metaKey)) {
       const key = event.key.toLowerCase();
       if (key === "c" && !event.repeat && !String(window.getSelection() || "")) {
         event.preventDefault(); state.tileCopy = state.mapMode === "tiles"; state.collisionCopy = state.mapMode === "collision"; renderTileTools(currentRoom()); return;
@@ -2045,7 +2051,7 @@
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return;
       event.preventDefault();
       const statsVisible = !byId("stats-panel").hidden;
-      (statsVisible ? ui.statsSearch : ui.roomSearch).focus();
+      (!byId("dialogue-panel").hidden ? byId("dialogue-search") : statsVisible ? ui.statsSearch : ui.roomSearch).focus();
     }
     if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey &&
         (event.key === "c" || event.key === "C" || event.key === "v" || event.key === "V")) {
@@ -2053,7 +2059,7 @@
       const editable = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement ||
         target instanceof HTMLSelectElement || (target && target.isContentEditable);
       const textSelected = window.getSelection && String(window.getSelection() || "").length > 0;
-      const mapVisible = byId("stats-panel").hidden;
+      const mapVisible = !byId("map-panel").hidden;
       if (!editable && !textSelected && mapVisible && state.model && !state.drag) {
         const handled = event.key.toLowerCase() === "c" ? copyEntity() : pasteEntity();
         if (handled) event.preventDefault();
@@ -2065,5 +2071,6 @@
     }
   });  renderMap();
   renderStats();
+  window.HodDialogueUI.render(null);
   updateChrome();
 })();

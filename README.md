@@ -43,3 +43,9 @@ ROMs, patches, saves, and extracted game assets are not included. Gameplay chang
 ## Reference
 
 ROM format research uses [DSVEdit](https://github.com/LagoLunatic/DSVEdit). Castlevania and Harmony of Dissonance belong to their respective rights holders.
+
+## Dialogue Editor
+
+Browse all 24 story scripts and all 683 entries in the main text table, including names, menus and shop text. Search by words or entry number. Each editable block keeps its scene actions. Character dialogue blocks have separate Speaker and Portrait selectors, with six existing portraits. The intro remains narration. Choices affect the selected block; following blocks keep their own choices. Insert a character name using the menu; in story text, Next page adds another page for the same speaker. Apply text edits or Download ROM saves drafts into the exported copy. Undo reverses applied edits. Download text list exports the complete inventory.
+
+Longer rewrites are appended without overwriting other game data, within the 32 MiB cartridge limit. The font must contain each typed character. Existing scene triggers, script choices and ending conditions are protected; adding a new scene or changing its conditions requires separate script work. Text boxes and menu widths stay the same; the reading preview and length hints are approximate, so check changed dialogue in-game. Custom text drawn directly by mods and text stored as images are outside the main text table.

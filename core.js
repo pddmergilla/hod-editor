@@ -1389,11 +1389,13 @@
     function readText(id) {
       const at = read.offset(read.word(TEXT_TABLE + id * 4), 4);
       const codes = [];
-      for (let i = 1; i < 512; i++) {
+      let terminated = false;
+      for (let i = 1; at + i * 2 + 1 < bytes.length; i++) {
         const code = read.half(at + i * 2);
-        if (code === 0xf00a) break;
+        if (code === 0xf00a) {terminated = true; break;}
         codes.push(code);
       }
+      check(terminated, 'A text entry has no ending.');
       const trail = codes[codes.length - 1] === 0xf006;
       if (trail) codes.pop();
       const text = codes.map(code => code === 0xf006 ? '\n' : glyphChar(code) ?? '{' + hex(code, 4) + '}').join('');
@@ -1416,7 +1418,7 @@
       }
       if (trail) codes.push(0xf006);
       codes.push(0xf00a);
-      check(codes.length <= 400, 'This text is too long.');
+      check(codes.length * 2 <= LIMIT - bytes.length - FOOTER.length - 4, 'There is no room left for this text.');
       return codes;
     }
 
@@ -1622,12 +1624,133 @@
       stats.spells.push(row);
     }
 
+
+    const dialogueRows = [];
+    const dialogueFields = new Map();
+    const multipartCommands = new Set([0xf001, 0xf002, 0xf003, 0xf007, 0xf008]);
+    const rawWord = word => '{' + hex(word, 4) + '}';
+    const categoryForText = id => id < 10 ? 'Character names' : id < 0x22 ? 'Story dialogue' :
+      id < 0xf7 ? 'Item names' : id < 0x1cc ? 'Item descriptions' : id < 0x249 ? 'Enemy names' :
+      id < 0x28c ? 'Menus and shop' : 'Music names';
+    for (let id = 0; id <= 0x2aa; id++) {
+      let field = [...fields.values()].find(item => item.format === 'text' && item.at === id);
+      if (!field) {
+        const ui = textField('dialogue-' + id, 'Text', id, true, '');
+        field = fields.get(ui.id);
+      }
+      dialogueFields.set(id, field);
+      dialogueRows.push({id, category: categoryForText(id)});
+    }
+    function dialogueParts(id) {
+      const field = dialogueFields.get(id);
+      check(field, 'Choose a text entry.');
+      const codes = encodeText(field.ui.value, field).slice(1, -1);
+      if (field.trail) codes.pop();
+      const parts = [];
+      let text = '', speaker = null, portrait = null, prefix = [];
+      const flush = () => {
+        if (text) {parts.push({text, speaker, portrait, prefix}); text = ''; prefix = [];}
+      };
+      for (let i = 0; i < codes.length; i++) {
+        const word = codes[i];
+        if (word === 0xf006) {text += '\n'; continue;}
+        if (word === 0xf001) {text += '{NAME ' + codes[++i] + '}'; continue;}
+        if (word >= 0xf000 && word <= 0xf0ff) {
+          flush(); prefix.push(word);
+          if (multipartCommands.has(word)) {
+            const arg = codes[++i]; prefix.push(arg);
+            if (word === 0xf007) speaker = arg;
+            if (word === 0xf003) portrait = arg;
+          }
+        } else text += glyphChar(word) ?? rawWord(word);
+      }
+      flush();
+      if (prefix.length || !parts.length) parts.push({text: '', speaker, portrait, prefix});
+      return parts;
+    }
+    function getDialogue(id) {
+      const row = dialogueRows.find(row => row.id === id);
+      check(row, 'Choose a text entry.');
+      return {...row, parts: dialogueParts(id), changed: statEdits.has(dialogueFields.get(id).ui.id)};
+    }
+    function getDialogues() {
+      return dialogueRows.map(row => {
+        const parts = dialogueParts(row.id);
+        const text = parts.map(part => part.text).join(' ').replace(/\{NAME (\d+)\}/g,
+          (_, id) => dialogueFields.get(Number(id))?.ui.value || '???');
+        return {...row, text, changed: statEdits.has(dialogueFields.get(row.id).ui.id)};
+      });
+    }
+    function dialogueText(value, story) {
+      let raw = '';
+      for (const token of value.replace(/\r\n?/g, '\n').split(/(\{[^}]*\})/)) {
+        const name = /^\{NAME ([0-9])\}$/.exec(token);
+        if (name) raw += rawWord(0xf001) + rawWord(Number(name[1]));
+        else if (token === '{PAGE}' && story) raw += rawWord(0xf005) + rawWord(0xf009);
+        else if (/^\{[0-9a-fA-F]{4}\}$/.test(token)) {
+          const word = parseInt(token.slice(1, -1), 16);
+          check(word >= 0x8140 && word < 0xf000, 'Only text symbols can be entered here.');
+          raw += token;
+        } else {
+          check(!/[{}]/.test(token), 'Use a listed name or page marker.');
+          raw += token;
+        }
+      }
+      return raw;
+    }
+    function validateDialogue(id, values) {
+      const field = dialogueFields.get(id);
+      const parts = dialogueParts(id);
+      check(Array.isArray(values) && values.length === parts.length, 'Reload this dialogue before editing.');
+      let speaker = null, portrait = null;
+      const text = parts.map((part, index) => {
+        const value = typeof values[index] === 'string' ? {text: values[index]} : values[index];
+        check(value && typeof value.text === 'string', 'Dialogue must be text.');
+        check(part.text || !value.text, 'This part is reserved for scene actions.');
+        const nextSpeaker = value.speaker === undefined ? part.speaker : value.speaker;
+        const nextPortrait = value.portrait === undefined ? part.portrait : value.portrait;
+        const canChange = id > 10 && id < 0x22 && Boolean(part.text) && part.speaker !== null && part.portrait !== null;
+        check(canChange || (nextSpeaker === part.speaker && nextPortrait === part.portrait),
+          'Speaker and portrait choices are available in character dialogue.');
+        if (canChange) {
+          integer(nextSpeaker, 0, 9, 'Speaker');
+          integer(nextPortrait, 1, 6, 'Portrait');
+        }
+        const prefix = part.prefix.slice();
+        const positions = new Map();
+        for (let i = 0; i < prefix.length; i++) {
+          const command = prefix[i];
+          if (!multipartCommands.has(command)) continue;
+          const arg = prefix[++i];
+          if (command === 0xf007) {speaker = arg; positions.set(command, i);}
+          if (command === 0xf003) {portrait = arg; positions.set(command, i);}
+        }
+        const setChoice = (command, current, desired) => {
+          if (desired === null || current === desired) return;
+          if (positions.has(command)) prefix[positions.get(command)] = desired;
+          else prefix.push(command, desired);
+        };
+        if (part.text) {
+          setChoice(0xf003, portrait, nextPortrait);
+          setChoice(0xf007, speaker, nextSpeaker);
+          portrait = nextPortrait; speaker = nextSpeaker;
+        }
+        return prefix.map(rawWord).join('') + dialogueText(value.text, id >= 10 && id < 0x22);
+      }).join('');
+      encodeText(text, field);
+      return {field, text};
+    }
+    function updateDialogue(id, values) {
+      const {field, text} = validateDialogue(id, values);
+      updateStat(field.ui.id, text);
+    }
+
     function updateStat(id, value) {
       const field = fields.get(id);
       check(field, 'Choose a valid stat.');
       if (field.format === 'text') {
         check(typeof value === 'string', field.ui.label + ' must be text.');
-        check(value.trim().length > 0, field.ui.label + ' cannot be empty.');
+        if (!field.ui.id.startsWith('dialogue-')) check(value.trim().length > 0, field.ui.label + ' cannot be empty.');
         encodeText(value, field);
       } else {
         integer(value, field.ui.min, field.ui.max, field.ui.label);
@@ -1799,7 +1922,7 @@
     }
 
     return {
-      areas, stats, getEntities, getTemplates, getEnemyOptions, getEnemyBank, getEnemyBankAddOptions, getEntityAddCost,
+      areas, stats, getDialogues, getDialogue, updateDialogue, validateDialogue, getEntities, getTemplates, getEnemyOptions, getEnemyBank, getEnemyBankAddOptions, getEntityAddCost,
       getBreakableOptions, renderRoomArt, renderItemIcon, renderEntitySprite,
       getTileLayers, editTiles, getTileCollision, editTileCollision, editTileCollisions, sampleTileCells, editTileCells,
       addEntity, addTypedEntity, duplicateEntity, pasteEntity, updateEntity, updateTypedEntity: updateEntity, removeEntity,
