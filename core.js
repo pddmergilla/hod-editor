@@ -236,6 +236,11 @@
   }
 
   function createModel(bytes, read, savedBankRooms) {
+    const localLayers = new Map();
+    const tileEdits = new Map();
+    const collisionEdits = new Map();
+    const sourceHalf = read.half;
+    read = {...read, half: at => tileEdits.get(at) ?? sourceHalf(at)};
     const getText = textReader(read);
     const enemyNames = Array.from({length: 125}, (_, index) => {
       const name = getText(0x1cc + index);
@@ -323,10 +328,8 @@
     const compressedCache = new Map();
     for (const area of areas) {
       for (const room of area.rooms) {
-        let cached;
         Object.defineProperty(room, 'collision', {get() {
-          if (cached === undefined) cached = collisionFor(read, room, compressedCache);
-          return cached;
+          return roomCollision(room);
         }});
       }
     }
@@ -479,7 +482,232 @@
       return result;
     }
 
-    function renderRoomArt(id) {
+    function decompressHeader(at) {
+      const output = [];
+      let source = at + 4;
+      while (output.length < 4) {
+        const flags = read.byte(source++);
+        for (let bit = 128; bit && output.length < 4; bit >>= 1) {
+          if (!(flags & bit)) output.push(read.byte(source++));
+          else {
+            const high = read.byte(source++);
+            const distance = ((high & 15) << 8 | read.byte(source++)) + 1;
+            check(distance <= output.length, 'Invalid collision header.');
+            for (let i = 0; i < (high >> 4) + 3 && output.length < 4; i++) output.push(output[output.length - distance]);
+          }
+        }
+      }
+      return output;
+    }
+
+    function getTileLayers(id) {
+      const room = roomById(id);
+      const list = read.offset(read.word(room.at + 8), 24);
+      if (list === null) return [];
+      const layers = [];
+      for (let index = 0; index < 3; index++) {
+        const entry = list + index * 8;
+        const pointer = read.word(entry + 4);
+        if (!pointer) continue;
+        const metadata = read.offset(pointer, 16);
+        const type = read.half(metadata + 2);
+        const width = read.byte(metadata) * 8, height = read.byte(metadata + 1) * 8;
+        if (![2, 3].includes(type) || !width || !height || width > 120 || height > 120) continue;
+        const tilesetPointer = read.word(metadata + 4);
+        const layoutPointer = read.word(metadata + 12);
+        if (!tilesetPointer || !layoutPointer) continue;
+        const tileset = decompressedAt(tilesetPointer);
+        const layoutAt = read.offset(layoutPointer, width * height * 2);
+        const collisionPointer = read.word(metadata + 8);
+        layers.push({index, metadata, width, height, type, tilesetPointer, collisionPointer,
+          layoutAt, bgControl: read.half(entry + 2), data: tileset, collision: collisionPointer ? decompressedAt(collisionPointer) : null, z: read.byte(entry), count: Math.min(0x4000, tileset.length / (type === 3 ? 16 : 32) + 1),
+          key: type + '/' + tilesetPointer + '/' + collisionPointer,
+          values: Uint16Array.from({length: width * height}, (_, i) => read.half(layoutAt + i * 2))});
+      }
+      return layers.map(layer => ({...layer, ...localLayers.get(id + '/' + layer.index),
+        baseKey: layer.key, key: layer.key + (localLayers.has(id + '/' + layer.index) ? '/' + id : '')}));
+    }
+
+    function editTiles(id, index, changes) {
+      const layer = getTileLayers(id).find(row => row.index === index);
+      check(layer, 'Choose an available layer.');
+      if (localLayers.has(id + '/' + index)) {
+        const values = layer.values.slice();
+        for (const {x, y, value} of changes) {
+          integer(x, 0, layer.width - 1, 'Tile X'); integer(y, 0, layer.height - 1, 'Tile Y');
+          integer(value, 0, 65535, 'Tile ID'); check((value & 0x3fff) < layer.count, 'This tile is outside the room tileset.');
+          values[y * layer.width + x] = value;
+        }
+        if (values.some((v, i) => v !== layer.values[i])) saveLocalLayer(id, index, {...localLayers.get(id + '/' + index), values});
+        return;
+      }
+      const writes = new Map();
+      for (const {x, y, value} of changes) {
+        integer(x, 0, layer.width - 1, 'Tile X');
+        integer(y, 0, layer.height - 1, 'Tile Y');
+        integer(value, 0, 65535, 'Tile ID');
+        check((value & 0x3fff) < layer.count, 'This tile is outside the room tileset.');
+        writes.set(layer.layoutAt + (y * layer.width + x) * 2, value);
+      }
+      const previous = new Map([...writes.keys()].map(at => [at, tileEdits.get(at)]));
+      if (![...writes].some(([at, value]) => read.half(at) !== value)) return;
+      history.push(() => previous.forEach((value, at) => value === undefined ? tileEdits.delete(at) : tileEdits.set(at, value)));
+      writes.forEach((value, at) => value === sourceHalf(at) ? tileEdits.delete(at) : tileEdits.set(at, value));
+    }
+
+    function getTileCollision(id, index, reference) {
+      const layer = getTileLayers(id).find(row => row.index === index);
+      check(layer && layer.collisionPointer, 'This layer has no collision definitions.');
+      const data = layer.collision;
+      const tile = reference & 0x3fff;
+      check(tile > 0 && tile * 16 <= data.length, 'Choose a nonempty tile with collision.');
+      return data.slice((tile - 1) * 16, tile * 16);
+    }
+
+    function editTileCollision(id, index, reference, value) {
+      integer(value, 0, 255, 'Collision value');
+      getTileCollision(id, index, reference);
+      const layer = getTileLayers(id).find(row => row.index === index);
+      if (localLayers.has(id + '/' + index)) {
+        const collision = layer.collision.slice(), start = ((reference & 0x3fff) - 1) * 16;
+        if (collision.subarray(start, start + 16).every(n => n === value)) return;
+        collision.fill(value, start, start + 16);
+        saveLocalLayer(id, index, {...localLayers.get(id + '/' + index), collision}); return;
+      }
+      const at = read.offset(layer.collisionPointer, 4);
+      const data = decompressedAt(layer.collisionPointer);
+      const start = ((reference & 0x3fff) - 1) * 16;
+      const old = data.slice(start, start + 16);
+      if (old.every(n => n === value)) return;
+      const wasEdited = collisionEdits.has(at);
+      history.push(() => {data.set(old, start); if (!wasEdited) collisionEdits.delete(at);});
+      data.fill(value, start, start + 16);
+      collisionEdits.set(at, data);
+    }
+
+    function editTileCollisions(id, index, references, value) {
+      integer(value, 0, 255, 'Collision value');
+      references.forEach(reference => getTileCollision(id, index, reference));
+      const start = history.length;
+      try {references.forEach(reference => editTileCollision(id, index, reference, value));}
+      catch (error) {while (history.length > start) history.pop()(); throw error;}
+      const steps = history.splice(start);
+      if (steps.length) history.push(() => steps.reverse().forEach(undo => undo()));
+    }
+
+    function saveLocalLayer(id, index, edit) {
+      const key = id + '/' + index, previous = localLayers.get(key);
+      history.push(() => previous ? localLayers.set(key, previous) : localLayers.delete(key));
+      localLayers.set(key, edit);
+    }
+
+    function roomCollision(room) {
+      const layer = getTileLayers(room.id).find(row => row.index === 0);
+      if (!layer?.collision) return null;
+      const width = layer.width * 2, height = layer.height * 2;
+      const tiles = new Uint8Array(width * height);
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const ref = layer.values[(y >> 1) * layer.width + (x >> 1)], id = ref & 0x3fff;
+        if (!id) continue;
+        const sx = ((x & 1) ^ Number(Boolean(ref & 0x4000))) * 2;
+        const sy = ((y & 1) ^ Number(Boolean(ref & 0x8000))) * 2;
+        const at = (id - 1) * 16 + sy * 4 + sx;
+        tiles[y * width + x] = Number([0, 1, 4, 5].some(i => (layer.collision[at + i] & 15) !== 0));
+      }
+      return {width, height, tiles};
+    }
+
+    function sampleTileCells(id, index, reference) {
+      const layer = getTileLayers(id).find(row => row.index === index);
+      check(layer, 'Choose an available layer.');
+      integer(reference, 0, 65535, 'Tile ID');
+      const tile = reference & 0x3fff;
+      check(tile < layer.count, 'This tile is outside the room tileset.');
+      const stride = layer.type === 3 ? 1 : 2;
+      return Array.from({length: 16}, (_, i) => {
+        if (!tile) return {ref: 0, h: false, v: false};
+        const x = i % 4, y = i >> 2;
+        const at = ((tile - 1) * 16 + (reference & 0x8000 ? 3 - y : y) * 4 + (reference & 0x4000 ? 3 - x : x)) * stride;
+        const raw = layer.data[at] | (stride === 2 ? layer.data[at + 1] << 8 : 0);
+        return {ref: raw, h: Boolean(reference & 0x4000), v: Boolean(reference & 0x8000)};
+      });
+    }
+
+    function editTileCells(id, index, changes) {
+      const layer = getTileLayers(id).find(row => row.index === index);
+      check(layer, 'Choose an available layer.');
+      const data = layer.data.slice(), values = layer.values.slice(), collision = layer.collision?.slice();
+      const stride = layer.type === 3 ? 1 : 2, blockSize = stride * 16;
+      const groups = new Map();
+      const room = roomById(id), graphics = backgroundGraphics(room);
+      const charBase = ((layer.bgControl >> 2) & 3) * 0x4000;
+      function orient(cell, h, v) {
+        integer(cell.ref, 0, stride === 1 ? 255 : 65535, 'Tile piece');
+        const flipH = Boolean(cell.h) !== h, flipV = Boolean(cell.v) !== v;
+        if (stride === 2) return cell.ref ^ (flipH ? 0x400 : 0) ^ (flipV ? 0x800 : 0);
+        if ((!flipH && !flipV) || !cell.ref) return cell.ref;
+        function graphic(ref) {
+          const address = charBase + ref * 64;
+          const slot = address >= 0x8000 ? 3 : address >>> 13, page = graphics[slot];
+          const start = address - (slot === 3 ? 0x8000 : slot * 0x2000);
+          return page?.bpp === 8 && start >= 0 && start + 64 <= page.data.length ? page.data.subarray(start, start + 64) : null;
+        }
+        const source = graphic(cell.ref);
+        check(source, 'This flipped piece has no matching artwork.');
+        for (let candidate = 1; candidate < 256; candidate++) {
+          const pixels = graphic(candidate); if (!pixels) continue;
+          if (pixels.every((pixel, i) => pixel === source[(flipV ? 7 - (i >> 3) : i >> 3) * 8 + (flipH ? 7 - (i & 7) : i & 7)])) return candidate;
+        }
+        throw new Error('This background has no flipped version of that piece. Turn off Flip X/Y or copy an unflipped piece.');
+      }
+      for (const change of changes) {
+        integer(change.x, 0, layer.width * 4 - 1, 'Piece X'); integer(change.y, 0, layer.height * 4 - 1, 'Piece Y');
+        const block = (change.y >> 2) * layer.width + (change.x >> 2);
+        if (!groups.has(block)) groups.set(block, []);
+        groups.get(block).push(change);
+      }
+      for (const [block, edits] of groups) {
+        const reference = values[block], tile = reference & 0x3fff;
+        const h = Boolean(reference & 0x4000), v = Boolean(reference & 0x8000);
+        const desired = tile ? data.slice((tile - 1) * blockSize, tile * blockSize) : new Uint8Array(blockSize);
+        const oldCollision = collision ? (tile ? collision.slice((tile - 1) * 16, tile * 16) : new Uint8Array(16)) : null;
+        check(!oldCollision || oldCollision.length === 16, 'This tile has incomplete collision data.');
+        for (const {x, y, cell} of edits) {
+          const sx = h ? 3 - (x & 3) : x & 3, sy = v ? 3 - (y & 3) : y & 3;
+          const at = (sy * 4 + sx) * stride, raw = orient(cell, h, v);
+          desired[at] = raw & 255; if (stride === 2) desired[at + 1] = raw >> 8;
+        }
+        if (tile ? desired.every((b, i) => b === data[(tile - 1) * blockSize + i]) : desired.every(b => b === 0)) continue;
+        const limit = Math.min(layer.count, collision ? collision.length / 16 + 1 : layer.count);
+        let chosen = 0;
+        for (let candidate = 1; candidate < limit; candidate++) {
+          if (desired.every((b, i) => b === data[(candidate - 1) * blockSize + i]) &&
+              (!collision || oldCollision.every((b, i) => b === collision[(candidate - 1) * 16 + i]))) {chosen = candidate; break;}
+        }
+        if (!chosen) {
+          const used = new Set(Array.from(values, (ref, i) => i === block ? 0 : ref & 0x3fff));
+          for (let candidate = 1; candidate < limit; candidate++) if (!used.has(candidate)) {chosen = candidate; break;}
+          check(chosen, 'This layer has no spare tile combinations. Undo a small-brush edit or use 32 × 32 painting.');
+          data.set(desired, (chosen - 1) * blockSize);
+          if (collision) collision.set(oldCollision, (chosen - 1) * 16);
+        }
+        values[block] = chosen | (reference & 0xc000);
+      }
+      if (data.every((b, i) => b === layer.data[i]) && values.every((b, i) => b === layer.values[i])) return;
+      saveLocalLayer(id, index, {data, values, collision});
+    }
+
+    function packTileData(data) {
+      const size = data.length + 4, raw = new Uint8Array(size);
+      new DataView(raw.buffer).setUint32(0, (size << 8) | 0x10, true); raw.set(data, 4);
+      const packed = new Uint8Array(4 + size + Math.ceil(size / 8));
+      new DataView(packed.buffer).setUint32(0, (size << 8) | 0x10, true);
+      let pos = 4;
+      for (let i = 0; i < size; i += 8) {packed[pos++] = 0; const part = raw.subarray(i, i + 8); packed.set(part, pos); pos += part.length;}
+      return packed;
+    }
+
+    function renderRoomArt(id, options = {}) {
       const room = roomById(id);
       const layerListAt = read.offset(read.word(room.at + 8), 24);
       if (layerListAt === null) return null;
@@ -512,23 +740,29 @@
           width: layerWidth, height: layerHeight, type, layoutAt, tileset,
         });
       }
+      for (const row of rows) {const layer = getTileLayers(id).find(layer => layer.index === row.index); row.tileset = layer.data; row.values = layer.values;}
       if (!rows.length) return null;
 
-      const width = room.pixelWidth;
-      const height = room.pixelHeight;
+      const paletteLayer = options.palette === undefined ? null : rows.find(row => row.index === options.palette);
+      if (options.palette !== undefined && !paletteLayer) return null;
+      const paletteCount = paletteLayer ? getTileLayers(id).find(row => row.index === options.palette).count : 0;
+      const width = paletteLayer ? 8 * 32 : room.pixelWidth;
+      const height = paletteLayer ? Math.ceil(paletteCount / 8) * 32 : room.pixelHeight;
       const pixels = new Uint8ClampedArray(width * height * 4);
       for (let i = 3; i < pixels.length; i += 4) pixels[i] = 255;
       const effect = effects.filter(row => row.visualEffect === 0x0d || row.visualEffect === 0x0f).at(-1);
       rows.sort((a, b) => b.z - a.z);
 
       for (const layer of rows) {
+        if (paletteLayer && layer !== paletteLayer) continue;
+        if (!paletteLayer && options.hidden?.includes(layer.index)) continue;
         const halfAlpha = effect && ((effect.visualEffect === 0x0d && layer.index === 1) ||
           (effect.visualEffect === 0x0f && layer.index === 0));
         const alpha = halfAlpha ? ((15 << 3) | (15 >> 2)) : 255;
         const charBase = ((layer.bgControl >> 2) & 3) * 0x4000;
         const blockCache = new Map();
-        const mapWidth = layer.width * 8;
-        const mapHeight = layer.height * 8;
+        const mapWidth = paletteLayer ? 8 : layer.width * 8;
+        const mapHeight = paletteLayer ? Math.ceil(paletteCount / 8) : layer.height * 8;
 
         function renderBlock(reference) {
           if (blockCache.has(reference)) return blockCache.get(reference);
@@ -583,7 +817,7 @@
 
         for (let blockY = 0; blockY < mapHeight && blockY * 32 < height; blockY++) {
           for (let blockX = 0; blockX < mapWidth && blockX * 32 < width; blockX++) {
-            const reference = read.half(layer.layoutAt + (blockY * mapWidth + blockX) * 2);
+            const reference = paletteLayer ? blockY * mapWidth + blockX : layer.values[blockY * mapWidth + blockX];
             if (!(reference & 0x3fff)) continue;
             const block = renderBlock(reference);
             for (let y = 0; y < 32 && blockY * 32 + y < height; y++) {
@@ -1415,7 +1649,7 @@
 
     function build() {
       const customBanks = new Map([...savedBanks, ...bankEdits]);
-      if (!roomEdits.size && !roomResourceEdits.size && !customBanks.size && !statEdits.size &&
+      if (!localLayers.size && !tileEdits.size && !collisionEdits.size && !roomEdits.size && !roomResourceEdits.size && !customBanks.size && !statEdits.size &&
           profile.baseSizes.includes(bytes.length)) return bytes.slice();
       let end = (bytes.length + 3) & ~3;
       const entityLists = [];
@@ -1453,6 +1687,33 @@
         rooms: Object.fromEntries([...customBanks].sort(([a], [b]) => a.localeCompare(b))
           .map(([id, subtypes]) => [id, [...subtypes].sort((a, b) => a - b)])),
       })) : null;
+      const collisionLists = [];
+      for (const [at, data] of collisionEdits) {
+        const size = data.length + 4;
+        const packed = new Uint8Array(4 + size + Math.ceil(size / 8));
+        new DataView(packed.buffer).setUint32(0, (size << 8) | 0x10, true);
+        const header = decompressHeader(at);
+        let pos = 4;
+        const raw = new Uint8Array(size);
+        raw.set(header); raw.set(data, 4);
+        for (let i = 0; i < raw.length; i += 8) {packed[pos++] = 0; const part = raw.subarray(i, i + 8); packed.set(part, pos); pos += part.length;}
+        collisionLists.push({at, packed, start: end});
+        end = (end + packed.length + 3) & ~3;
+      }
+      const localLists = [];
+      for (const room of rooms.values()) {
+        const edits = getTileLayers(room.id).filter(layer => localLayers.has(room.id + '/' + layer.index));
+        if (!edits.length) continue;
+        const list = {room, edits: [], start: end}; end += 24;
+        for (const layer of edits) {
+          const item = {layer, metadata: end}; end += 16;
+          item.layout = end; end = (end + layer.values.length * 2 + 3) & ~3;
+          item.gfx = end; item.gfxData = packTileData(layer.data); end = (end + item.gfxData.length + 3) & ~3;
+          if (layer.collision) {item.collision = end; item.collisionData = packTileData(layer.collision); end = (end + item.collisionData.length + 3) & ~3;}
+          list.edits.push(item);
+        }
+        localLists.push(list);
+      }
       const bankStart = end;
       if (bankPayload) end += bankPayload.length + 4 + BANK_MARKER.length;
       const footerAt = end;
@@ -1460,6 +1721,30 @@
       const output = new Uint8Array(footerAt + FOOTER.length);
       output.set(bytes);
       const view = new DataView(output.buffer);
+      tileEdits.forEach((value, at) => view.setUint16(at, value, true));
+      for (const {at, packed, start} of collisionLists) {
+        output.set(packed, start);
+        const metadata = new Set();
+        for (const room of rooms.values()) for (const layer of getTileLayers(room.id)) {
+          if (layer.collisionPointer === ROM + at) metadata.add(layer.metadata);
+        }
+        metadata.forEach(pos => view.setUint32(pos + 8, ROM + start, true));
+      }
+      for (const {room, edits, start} of localLists) {
+        const originalList = read.offset(read.word(room.at + 8), 24);
+        output.set(bytes.subarray(originalList, originalList + 24), start);
+        view.setUint32(room.at + 8, ROM + start, true);
+        for (const item of edits) {
+          const {layer, metadata, layout, gfx, gfxData} = item;
+          output.set(bytes.subarray(layer.metadata, layer.metadata + 16), metadata);
+          view.setUint32(start + layer.index * 8 + 4, ROM + metadata, true);
+          view.setUint32(metadata + 4, ROM + gfx, true);
+          view.setUint32(metadata + 12, ROM + layout, true);
+          layer.values.forEach((v, i) => view.setUint16(layout + i * 2, v, true));
+          output.set(gfxData, gfx);
+          if (item.collisionData) {view.setUint32(metadata + 8, ROM + item.collision, true); output.set(item.collisionData, item.collision);}
+        }
+      }
       for (const {room, sorted, start} of entityLists) {
         view.setUint32(room.at + 24, ROM + start, true);
         let at = start;
@@ -1516,12 +1801,13 @@
     return {
       areas, stats, getEntities, getTemplates, getEnemyOptions, getEnemyBank, getEnemyBankAddOptions, getEntityAddCost,
       getBreakableOptions, renderRoomArt, renderItemIcon, renderEntitySprite,
+      getTileLayers, editTiles, getTileCollision, editTileCollision, editTileCollisions, sampleTileCells, editTileCells,
       addEntity, addTypedEntity, duplicateEntity, pasteEntity, updateEntity, updateTypedEntity: updateEntity, removeEntity,
       swapEnemyBank, addEnemyToBank, removeEnemyFromBank, updateStat, build,
       undo() { history.pop()?.(); },
       get canUndo() { return history.length > 0; },
       get changeCount() {
-        return new Set([...roomEdits.keys(), ...roomResourceEdits.keys(), ...bankEdits.keys()]).size + statEdits.size;
+        return new Set([...roomEdits.keys(), ...roomResourceEdits.keys(), ...bankEdits.keys()]).size + statEdits.size + tileEdits.size + collisionEdits.size + localLayers.size;
       },
     };
   }

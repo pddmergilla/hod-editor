@@ -388,3 +388,21 @@ a { color: var(--ink); }
 .entity-marker.has-sprite .marker-label { opacity: 0; }
 .entity-marker.has-sprite:hover .marker-label, .entity-marker.has-sprite.is-selected .marker-label, .entity-marker.has-sprite:focus-visible .marker-label { opacity: 1; }
 .entity-marker.has-sprite:hover .marker-halo, .entity-marker.has-sprite.is-selected .marker-halo, .entity-marker.has-sprite:focus-visible .marker-halo { opacity: 1; }
+
+.tile-tools { padding: 14px; }
+.tile-tools h2 { margin-top: 0; }
+.tile-tools select, .tile-tools input[type=number], #map-mode { width: 100%; padding: 7px; color: var(--ink); background: #262624; border: 1px solid #494943; border-radius: 4px; }
+.tile-flips { display: flex; gap: 12px; margin: 10px 0; }
+.tile-help, #brush-info, #collision-tools p { font-size: 11px; line-height: 1.5; }
+.tile-palette-wrap { max-height: 52vh; overflow: auto; margin-top: 12px; background: #131312; }
+#tile-palette { display: block; width: 256px; max-width: 100%; image-rendering: pixelated; cursor: crosshair; }
+#layer-visibility label { display: block; font-size: 11px; margin: 7px 0; }
+#copy-tile[aria-pressed=true], #copy-collision[aria-pressed=true] { background: #6a3b2b; }
+#room-map.tile-editing { cursor: crosshair; touch-action: none; }
+.tile-overlay { pointer-events: none; }
+.tile-outline { fill: rgba(217,119,87,.12); stroke: #ffbe83; stroke-width: 2; }
+
+.entity-sidebar #tile-grid { width: auto; min-height: 0; padding: 0; margin: 0 6px 0 0; }
+
+.entity-section[hidden], .tile-tools[hidden] { display: none; }
+.tile-flips input[type=checkbox], #layer-visibility input[type=checkbox] { width: auto; min-height: 0; padding: 0; }

@@ -74,6 +74,9 @@
 
   const kindNames = { 0: "Enemy", 1: "Object", 2: "Breakable", 3: "Item Pickup" };
   const state = {
+    brushSize: 32, tilePart: {x: 0, y: 0},
+    mapMode: "tiles", tileLayer: 0, tileBrush: null, tileCopy: false, collisionCopy: false,
+    tileGesture: null, tilePalette: null, hiddenLayers: new Set(),
     model: null,
     fileName: "",
     areaFilter: "castle:A",
@@ -310,7 +313,7 @@
         state.roomArtPreview = preview;
         return preview;
       }
-      const art = state.model.renderRoomArt(room.id);
+      const art = state.model.renderRoomArt(room.id, {hidden: [...state.hiddenLayers]});
       if (!art) {
         state.roomArtPreview = preview;
         return preview;
@@ -419,11 +422,11 @@
   function renderRoomSvg(room, dimensions, entities, preview) {
     const width = dimensions.width;
     const height = dimensions.height;
-    const markers = state.showEntities ? entities.map(markerMarkup).join("") : "";
+    const markers = state.showEntities && state.mapMode === "entities" ? entities.map(markerMarkup).join("") : "";
     const background = preview.status === "ready"
       ? '<image class="room-art" href="' + preview.dataUrl + '" x="0" y="0" width="' + preview.width + '" height="' + preview.height + '" preserveAspectRatio="none" image-rendering="pixelated"/>'
       : '<rect x="0" y="0" width="' + width + '" height="' + height + '" fill="#262624"/>';
-    const collision = state.showCollision || preview.status !== "ready" ? collisionRects(room) : "";
+    const collision = state.showCollision || state.mapMode === "collision" || preview.status !== "ready" ? collisionRects(room) : "";
     return '<svg id="room-map" class="room-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Room layout with entity markers">' +
       '<title>' + escapeHtml(room.name || room.id) + ' layout</title>' +
       background + '<g class="collision-overlay" aria-label="Collision geometry">' + collision + '</g>' +
@@ -914,6 +917,7 @@
   }
   function renderMapWorkspace() {
     const room = currentRoom();
+    renderTileTools(room);
     ui.showEntities.checked = state.showEntities;
     ui.showEntities.disabled = !state.model;
     ui.zoomLabel.textContent = state.zoom + "%";
@@ -976,8 +980,185 @@
     ui.zoomIn.disabled = state.zoom >= 400;
     renderEntityList(room, entities);
     renderEntityControls(room, entities);
-    bindMap(room, dimensions);
+    if (state.mapMode === "entities") bindMap(room, dimensions);
+    else bindTileMap(room);
+    if (state.mapMode !== "entities") ui.mapHint.textContent = "Drag to paint · Ctrl+C copies a tile or area · Esc cancels · Ctrl+Z undoes · right-drag pans";
   }
+  function tileLayers() {return currentRoom() && state.model ? state.model.getTileLayers(state.roomId) : [];}
+  function paintLayer() {return tileLayers().find(layer => layer.index === state.tileLayer);}
+  function tileReference() {
+    return (Number(byId("tile-id").value) & 0x3fff) | (byId("tile-flip-x").checked ? 0x4000 : 0) | (byId("tile-flip-y").checked ? 0x8000 : 0);
+  }
+  function renderTileTools(room) {
+    const active = state.mapMode !== "entities";
+    byId("tile-tools").hidden = !active;
+    document.querySelector(".entity-section").hidden = active;
+    byId("collision-tools").hidden = state.mapMode !== "collision";
+    const layers = room && state.model ? state.model.getTileLayers(room.id) : [];
+    if (!layers.some(layer => layer.index === state.tileLayer)) state.tileLayer = layers[0]?.index ?? 0;
+    const layer = layers.find(layer => layer.index === state.tileLayer);
+    if (state.tileBrush && (state.tileBrush.model !== state.model || state.tileBrush.key !== (state.brushSize === 16 ? layer?.baseKey : layer?.key))) state.tileBrush = null;
+    const select = byId("paint-layer");
+    select.innerHTML = layers.map(layer => '<option value="' + layer.index + '">Layer ' + layer.index + (layer.index === 0 ? ' · Foreground' : ' · Background') + '</option>').join("");
+    select.value = String(state.tileLayer); select.disabled = !layer;
+    byId("brush-size").disabled = !layer || state.mapMode !== "tiles";
+    byId("tile-id").disabled = !layer; byId("tile-id").max = layer ? layer.count - 1 : 0;
+    byId("copy-tile").disabled = !layer || state.mapMode !== "tiles";
+    byId("copy-tile").setAttribute("aria-pressed", String(state.tileCopy));
+    byId("copy-collision").disabled = !layer?.collisionPointer;
+    byId("copy-collision").setAttribute("aria-pressed", String(state.collisionCopy));
+    byId("layer-visibility").innerHTML = layers.map(layer => '<label><input type="checkbox" data-visible-layer="' + layer.index + '" ' + (state.hiddenLayers.has(layer.index) ? '' : 'checked') + '> Show layer ' + layer.index + '</label>').join("");
+    byId("brush-info").textContent = !layer ? "No editable layers in this room." : state.tileCopy ? "Drag a rectangle; release to copy." : state.collisionCopy ? "Click a tile to copy its collision." : state.tileBrush ? state.tileBrush.width + " × " + state.tileBrush.height + " copied tiles · click or drag to stamp" : state.brushSize + " × " + state.brushSize + " pixel brush · choose a piece below";
+    if (!layer || !active) return;
+    const key = [state.roomId, state.tileLayer, state.model.changeCount].join("/");
+    if (state.tilePalette?.model === state.model && state.tilePalette.key === key) return;
+    const art = state.model.renderRoomArt(room.id, {palette: layer.index});
+    const canvas = byId("tile-palette");
+    canvas.width = art?.width || 256; canvas.height = art?.height || 32;
+    if (art) canvas.getContext("2d").putImageData(new ImageData(art.pixels, art.width, art.height), 0, 0);
+    state.tilePalette = {model: state.model, key, canvas};
+  }
+  function makeTileBrush(samples, width, height, size) {
+    const layer = paintLayer(), palette = byId("tile-palette");
+    const canvas = document.createElement("canvas"); canvas.width = width * size; canvas.height = height * size;
+    const ctx = canvas.getContext("2d"), cells = [], cellWidth = width * size / 8;
+    const block = document.createElement("canvas"); block.width = block.height = 32;
+    const blockCtx = block.getContext("2d");
+    samples.forEach(({reference, sx = 0, sy = 0}, i) => {
+      const id = reference & 0x3fff;
+      blockCtx.clearRect(0, 0, 32, 32); blockCtx.save();
+      blockCtx.translate(reference & 0x4000 ? 32 : 0, reference & 0x8000 ? 32 : 0);
+      blockCtx.scale(reference & 0x4000 ? -1 : 1, reference & 0x8000 ? -1 : 1);
+      blockCtx.drawImage(palette, id % 8 * 32, Math.floor(id / 8) * 32, 32, 32, 0, 0, 32, 32); blockCtx.restore();
+      ctx.drawImage(block, sx, sy, size, size, i % width * size, Math.floor(i / width) * size, size, size);
+      if (size === 16) {
+        const source = state.model.sampleTileCells(state.roomId, state.tileLayer, reference);
+        for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) {
+          cells[(Math.floor(i / width) * 2 + y) * cellWidth + i % width * 2 + x] = source[(sy / 8 + y) * 4 + sx / 8 + x];
+        }
+      }
+    });
+    return {width, height, size, values: samples.map(s => s.reference), cells, image: canvas.toDataURL(),
+      key: size === 16 ? layer.baseKey : layer.key, model: state.model};
+  }
+  function bindTileMap(room) {
+    const svg = byId("room-map"), layer = paintLayer(); if (!svg || !layer) return;
+    svg.classList.add("tile-editing");
+    const size = state.mapMode === "tiles" ? state.brushSize : 32;
+    const cols = Math.min(layer.width * 32, room.pixelWidth) / size, rows = Math.min(layer.height * 32, room.pixelHeight) / size;
+    const ns = "http://www.w3.org/2000/svg";
+    const group = document.createElementNS(ns, "g"); group.classList.add("tile-overlay"); svg.append(group);
+    if (byId("tile-grid").checked) {
+      let path = "";
+      for (let x = 0; x <= room.pixelWidth; x += size) path += "M" + x + " 0V" + room.pixelHeight;
+      for (let y = 0; y <= room.pixelHeight; y += size) path += "M0 " + y + "H" + room.pixelWidth;
+      const lines = document.createElementNS(ns, "path"); lines.setAttribute("d", path); lines.setAttribute("stroke", "#ffffff22"); lines.setAttribute("fill", "none"); group.append(lines);
+    }
+    const marks = document.createElementNS(ns, "g"); group.append(marks);
+    const preview = document.createElementNS(ns, "g"); group.append(preview);
+    const position = event => {
+      const rect = svg.getBoundingClientRect();
+      return {x: Math.floor((event.clientX - rect.left) * room.pixelWidth / rect.width / size), y: Math.floor((event.clientY - rect.top) * room.pixelHeight / rect.height / size)};
+    };
+    const valid = p => p.x >= 0 && p.y >= 0 && p.x < cols && p.y < rows;
+    let brush = state.tileBrush;
+    if (!brush || brush.size !== size) {
+      let reference = tileReference();
+      if ((reference & 0x3fff) >= layer.count) {byId("tile-id").value = 0; reference = tileReference();}
+      const sx = size === 16 ? (reference & 0x4000 ? 1 - state.tilePart.x : state.tilePart.x) * 16 : 0;
+      const sy = size === 16 ? (reference & 0x8000 ? 1 - state.tilePart.y : state.tilePart.y) * 16 : 0;
+      brush = makeTileBrush([{reference, sx, sy}], 1, 1, size);
+      if (size === 16 && state.mapMode === "tiles") state.tileBrush = brush;
+    }
+    const outline = (p, width, height, url) => '<rect class="tile-outline" x="' + p.x * size + '" y="' + p.y * size + '" width="' + width * size + '" height="' + height * size + '"/>' + (url ? '<image opacity=".65" href="' + url + '" x="' + p.x * size + '" y="' + p.y * size + '" width="' + width * size + '" height="' + height * size + '"/>' : '');
+    function stamp(p) {
+      const g = state.tileGesture; if (!valid(p)) return;
+      if (state.mapMode === "collision") {g.points.set(p.y * layer.width + p.x, p); return;}
+      if (size === 16) {
+        const width = brush.width * 2;
+        brush.cells.forEach((cell, i) => {
+          const x = p.x * 2 + i % width, y = p.y * 2 + Math.floor(i / width);
+          if (x < cols * 2 && y < rows * 2) g.writes.set(y * layer.width * 4 + x, {x, y, cell});
+        });
+      } else brush.values.forEach((value, i) => {
+        const x = p.x + i % brush.width, y = p.y + Math.floor(i / brush.width);
+        if (x < cols && y < rows) g.writes.set(y * layer.width + x, {x, y, value});
+      });
+      marks.insertAdjacentHTML("beforeend", outline(p, brush.width, brush.height, brush.image));
+    }
+    function move(event) {
+      const p = position(event), g = state.tileGesture;
+      if (g && g.pointerId !== event.pointerId) return;
+      if (g?.copy) {
+        const q = {x: Math.max(0, Math.min(cols - 1, p.x)), y: Math.max(0, Math.min(rows - 1, p.y))};
+        g.last = q; preview.innerHTML = outline({x: Math.min(g.start.x, q.x), y: Math.min(g.start.y, q.y)}, Math.abs(q.x - g.start.x) + 1, Math.abs(q.y - g.start.y) + 1); return;
+      }
+      preview.innerHTML = valid(p) ? outline(p, brush.width, brush.height, state.mapMode === "tiles" ? brush.image : null) : "";
+      if (g && valid(p)) {
+        const steps = Math.max(Math.abs(p.x - g.last.x), Math.abs(p.y - g.last.y));
+        for (let i = 1; i <= steps; i++) stamp({x: Math.round(g.last.x + (p.x - g.last.x) * i / steps), y: Math.round(g.last.y + (p.y - g.last.y) * i / steps)});
+        g.last = p;
+      }
+    }
+    svg.addEventListener("pointerdown", event => {
+      if (event.button !== 0 || state.tileGesture) return;
+      const p = position(event); if (!valid(p)) return; event.preventDefault();
+      if (state.collisionCopy) {
+        try {const values = state.model.getTileCollision(room.id, layer.index, layer.values[p.y * layer.width + p.x]);
+          byId("collision-value").value = values[0];
+          showNotice(values.every(v => v === values[0]) ? "Collision copied." : "Mixed collision shape: sampled first cell (" + values[0] + ").");
+        } catch (error) {showNotice(error.message, "error");}
+        state.collisionCopy = false; renderTileTools(room); return;
+      }
+      state.tileGesture = {pointerId: event.pointerId, start: p, last: p, copy: state.tileCopy, writes: new Map(), points: new Map()};
+      svg.setPointerCapture(event.pointerId); if (!state.tileCopy) stamp(p);
+    });
+    svg.addEventListener("pointermove", move);
+    svg.addEventListener("pointerleave", () => {if (!state.tileGesture) preview.innerHTML = "";});
+    svg.addEventListener("pointercancel", () => {state.tileGesture = null; renderMapWorkspace();});
+    svg.addEventListener("pointerup", event => {
+      const g = state.tileGesture; if (!g || g.pointerId !== event.pointerId || event.button !== 0) return;
+      move(event); state.tileGesture = null;
+      try {
+        if (g.copy) {
+          const x = Math.min(g.start.x, g.last.x), y = Math.min(g.start.y, g.last.y);
+          const width = Math.abs(g.start.x - g.last.x) + 1, height = Math.abs(g.start.y - g.last.y) + 1;
+          const samples = Array.from({length: width * height}, (_, i) => {
+            const px = (x + i % width) * size, py = (y + Math.floor(i / width)) * size;
+            return {reference: layer.values[Math.floor(py / 32) * layer.width + Math.floor(px / 32)], sx: px % 32, sy: py % 32};
+          });
+          state.tileBrush = makeTileBrush(samples, width, height, size); state.tileCopy = false;
+          renderMapWorkspace(); showNotice(width + " × " + height + " pieces copied (" + size + " px).");
+        } else if (state.mapMode === "collision") {
+          const value = Number(byId("collision-value").value);
+          const references = new Set([...g.points.values()].map(p => layer.values[p.y * layer.width + p.x]).filter(v => v & 0x3fff));
+          state.model.editTileCollisions(room.id, layer.index, [...references], value);
+          afterEdit("Collision updated for shared tile definitions.");
+        } else {
+          if (size === 16) state.model.editTileCells(room.id, layer.index, [...g.writes.values()]);
+          else state.model.editTiles(room.id, layer.index, [...g.writes.values()]);
+          afterEdit("Tiles painted.");
+        }
+      } catch (error) {renderMapWorkspace(); showNotice(error.message, "error");}
+    });
+  }
+  byId("map-mode").addEventListener("change", event => {state.mapMode = event.target.value; state.tileCopy = false; state.collisionCopy = false; state.tileGesture = null; renderMapWorkspace();});
+  byId("brush-size").addEventListener("change", event => {state.brushSize = Number(event.target.value); state.tileBrush = null; state.tileCopy = false; state.tileGesture = null; renderMapWorkspace();});
+  byId("paint-layer").addEventListener("change", event => {state.tileLayer = Number(event.target.value); state.tileBrush = null; state.tileCopy = false; renderMapWorkspace();});
+  ["tile-id", "tile-flip-x", "tile-flip-y"].forEach(id => byId(id).addEventListener("change", () => {state.tileBrush = null; state.tileCopy = false; renderMapWorkspace();}));
+  byId("tile-grid").addEventListener("change", renderMapWorkspace);
+  byId("layer-visibility").addEventListener("change", event => {const index = Number(event.target.dataset.visibleLayer); if (event.target.checked) state.hiddenLayers.delete(index); else state.hiddenLayers.add(index); state.roomArtPreview = null; renderMapWorkspace();});
+  byId("copy-tile").addEventListener("click", () => {state.tileCopy = !state.tileCopy; renderTileTools(currentRoom());});
+  byId("copy-collision").addEventListener("click", () => {state.collisionCopy = !state.collisionCopy; renderTileTools(currentRoom());});
+  byId("tile-palette").addEventListener("click", event => {
+    const canvas = event.target, rect = canvas.getBoundingClientRect();
+    const px = Math.floor((event.clientX - rect.left) * canvas.width / rect.width), py = Math.floor((event.clientY - rect.top) * canvas.height / rect.height);
+    const id = Math.floor(py / 32) * 8 + Math.floor(px / 32);
+    if (id >= (paintLayer()?.count || 0)) return;
+    state.tilePart = {x: Math.floor(px % 32 / 16), y: Math.floor(py % 32 / 16)};
+    byId("tile-id").value = id; state.tileBrush = null; state.tileCopy = false; renderMapWorkspace();
+  });
+
   function bindMap(room, dimensions) {
     const svg = byId("room-map");
     if (!svg) return;
@@ -1087,6 +1268,9 @@
     renderMapWorkspace();
   }
   function selectRoom(id) {
+    state.tileGesture = null;
+    state.tileCopy = false;
+    state.collisionCopy = false;
     state.roomId = id;
     state.entityIndex = null;
     state.editDraftKey = "";
@@ -1102,6 +1286,7 @@
     renderMapWorkspace();
   }
   function afterEdit(message) {
+    state.roomArtPreview = null;
     if (state.model) entitySpriteCache.delete(state.model);
     state.editDraftKey = "";
     updateChrome();
@@ -1822,6 +2007,8 @@
     if (!state.model) return;
     try {
       state.model.undo();
+      state.roomArtPreview = null;
+      state.tileGesture = null;
       entitySpriteCache.delete(state.model);
       state.entityIndex = null;
       state.editDraftKey = "";
@@ -1836,6 +2023,23 @@
   });
   ui.download.addEventListener("click", downloadRom);
   document.addEventListener("keydown", event => {
+    const typing = event.target.closest?.("input, textarea, select, [contenteditable=true]");
+    if (!typing && !event.altKey && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+      if (!event.repeat && !state.tileGesture) ui.undo.click();
+      event.preventDefault(); return;
+    }
+    if (event.key === "Escape") {
+      state.tileCopy = false; state.collisionCopy = false; state.tileGesture = null;
+      if (!state.drag) {renderMapWorkspace(); return;}
+    }
+    if (!typing && byId("stats-panel").hidden && state.mapMode !== "entities" && state.model && !event.altKey && (event.ctrlKey || event.metaKey)) {
+      const key = event.key.toLowerCase();
+      if (key === "c" && !event.repeat && !String(window.getSelection() || "")) {
+        event.preventDefault(); state.tileCopy = state.mapMode === "tiles"; state.collisionCopy = state.mapMode === "collision"; renderTileTools(currentRoom()); return;
+      }
+      if (key === "v" && state.tileBrush) {event.preventDefault(); state.tileCopy = false; renderTileTools(currentRoom()); return;}
+      if (key === "c" || key === "v") return;
+    }
     if (event.key === "/" && !event.ctrlKey && !event.metaKey && !event.altKey) {
       const target = event.target;
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return;

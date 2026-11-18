@@ -108,7 +108,33 @@
             </div>
           </section>
 
-          <aside class="entity-sidebar" aria-label="Room entities">
+          <aside class="entity-sidebar" aria-label="Map editing tools">
+            <section class="display-section" aria-label="Editing mode">
+              <h2>Edit mode</h2>
+              <select id="map-mode" aria-label="Edit mode"><option value="tiles">Tiles</option><option value="collision">Collision</option><option value="entities">Entities</option></select>
+              <label><input id="tile-grid" type="checkbox" checked> Tile grid</label>
+            </section>
+            <section id="tile-tools" class="tile-tools">
+              <h2>Tiles</h2>
+              <label class="field-label" for="brush-size">Brush size</label>
+              <select id="brush-size"><option value="16">16 × 16 pixels</option><option value="32" selected>32 × 32 pixels</option></select>
+              <label class="field-label" for="paint-layer">Paint layer</label>
+              <select id="paint-layer" disabled></select>
+              <div id="layer-visibility"></div>
+              <label class="field-label" for="tile-id">Tile ID</label>
+              <input id="tile-id" type="number" min="0" max="65535" value="1" disabled>
+              <div class="tile-flips"><label><input id="tile-flip-x" type="checkbox"> Flip X</label><label><input id="tile-flip-y" type="checkbox"> Flip Y</label></div>
+              <button id="copy-tile" class="button button-outline button-wide" type="button" disabled>Copy Tile / Area · Ctrl+C</button>
+              <p id="brush-info">Choose a room to paint tiles.</p>
+              <div id="collision-tools" hidden>
+                <label class="field-label" for="collision-value">Collision value (0–255)</label>
+                <input id="collision-value" type="number" min="0" max="255" value="1">
+                <button id="copy-collision" class="button button-outline button-wide" type="button">Copy Collision</button>
+                <p>Changes all 16 collision cells of this tile definition. Shared tiles change together. Copy preserves the exact value; mixed shapes must be edited in-game with care.</p>
+              </div>
+              <p class="tile-help">Drag to paint · Ctrl+C, then drag to copy a rectangle · Ctrl+V uses the copied brush · Esc cancels · Ctrl+Z undoes · Right-drag pans</p>
+              <div class="tile-palette-wrap"><canvas id="tile-palette" width="256" height="32" aria-label="Room tile palette"></canvas></div>
+            </section>
             <section class="entity-section">
               <h2>Entities <span id="entity-count">0 markers</span></h2>
               <div class="entity-panel-heading"><strong id="entity-room-title">No room selected</strong></div>

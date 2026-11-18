@@ -14,7 +14,12 @@ Your ROM stays on your computer. The editor does not upload it.
 
 ## Features
 
-- Room artwork, enemy and pickup placement, and entity copy/paste.
+- Foreground/background tile painting with real ROM artwork, a tile palette, flips, layer visibility, and a grid. Choose a **16 × 16** or **32 × 32** brush. In 16 × 16 mode, click a quarter of a palette tile or copy a rectangle from the room; the grid and preview follow the selected size. Smaller painting preserves collision and the untouched parts of each block.
+- Copy a tile or rectangle with **Copy Tile / Area** or Ctrl+C, then click or drag to stamp it. Ctrl+V resumes the copied brush; Esc cancels copying. Copied brushes work across rooms with the same tile and collision definitions. Private 32 × 32 definitions stay in their own room. Changing the palette tile or paint layer returns to a single tile.
+- Small brushes rebuild room-specific tile combinations within the original tileset capacity. If a layer has no spare combinations, the stroke is rejected without changing anything; use 32 × 32 painting or Undo to free combinations. Some 256-color backgrounds cannot flip individual pieces unless matching flipped artwork already exists.
+- Collision mode samples a tile's first collision cell or sets all sixteen 8 × 8 collision cells to a value from 0–255. Tile definitions are shared: every use of that definition changes together. Existing mixed collision shapes are preserved until painted. Empty tiles cannot have collision edited.
+- Ctrl+Z / Cmd+Z undoes one brush stroke. Right-drag pans; zoom and the up/down controls work in every mode. Text fields keep their usual shortcuts.
+- Entities mode keeps room enemy and pickup placement, enemy banks, and entity copy/paste.
 - Actual ROM sprites at room scale for enemies, pickups, breakables, and supported objects. Sprites move and zoom with their placement markers. Helpers and unsupported artwork keep their markers; hover or select a sprite to see its label.
 - Room enemy banks with graphics and palette capacity checks.
 - Seven named enemy spawner choices, including Medusa Head Spawner. A new spawn area adds its timers and companion marker automatically, using four entity slots. Existing timers are reused.
