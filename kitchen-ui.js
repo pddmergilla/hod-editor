@@ -12,12 +12,19 @@
   const state = {ppf: null, built: null};
 
   const features = [
-    ['Visual Improvement recolor', 'Visual Improvement v1.2.9 [Chain]: reworked palettes for Juste, enemies and areas, brighter torches and effects, the Chain Whip and the smoother walk and jump animations.'],
-    ['Better Fast Travel', 'The Lure Key and Hint Card 3 come earlier, so the teleporter network opens sooner.'],
-    ['Juste rework', 'Reworked air movement and whip landings, whip stones that fire elemental attacks, spells ready at full MP and an HP number on the HUD.'],
-    ['Enemies and bosses', 'Reworked AI and attacks for many bosses and enemies, rebalanced HP and damage, and coloured damage numbers.'],
-    ['Items and equipment', 'Retuned equipment stats, cape resistances and level-based common drops.'],
-    ['New game+', 'After the best ending, name a new file NGPLUS to start with every whip part, spellbook and relic.'],
+    ['Visual Improvement recolor', 'Visual Improvement v1.2.9 [Chain]: new palettes for Juste, enemies and areas, brighter torches and effects, the Chain Whip and new walk and jump animations.'],
+    ['Better Fast Travel', 'The Lure Key and Hint Card 3 come earlier, so teleporters open sooner.'],
+    ['Air movement', 'Reworked air physics and mid-air whip landings, with quicker air-whip hits.'],
+    ['Slide kick', "Juste can't be hit while sliding, and slide and brandish attacks are rebalanced."],
+    ['Spells', 'You can only cast spells when MP is full. Without full MP, you automatically switch to Subweapon mode and are encouraged to use subweapons instead.'],
+    ['HUD', 'Shows your HP number and the equipped item’s icon. Save points refill hearts.'],
+    ['Whip upgrades', 'Equippable whip upgrades now actually have whip effects.'],
+    ['Auto-cure', 'Antidote and Uncurse are used automatically after a moment.'],
+    ['Enemies', 'Some enemies have been reworked with new moves and behaviors.'],
+    ['Bosses', 'Bosses have been revamped to be deadlier.'],
+    ['Items', 'Equip an item and use it anywhere in the game, instantly.'],
+    ['Map', "Dots mark item pickups you haven't collected, so you won't forget where you left things. Shop rooms have an orange marker."],
+    ['New Game+', 'After the best ending, name a new file NGPLUS to start with every whip part, spellbook and relic.'],
   ];
 
   panel.innerHTML = `
