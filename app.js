@@ -75,7 +75,7 @@
   const kindNames = { 0: "Enemy", 1: "Object", 2: "Breakable", 3: "Item Pickup" };
   const state = {
     brushSize: 32, tilePart: {x: 0, y: 0},
-    mapMode: "tiles", tileLayer: 0, tileBrush: null, tileCopy: false, collisionCopy: false,
+    mapMode: "entities", tileLayer: 0, tileBrush: null, tileCopy: false, collisionCopy: false,
     tileGesture: null, tilePalette: null, hiddenLayers: new Set(),
     model: null,
     fileName: "",

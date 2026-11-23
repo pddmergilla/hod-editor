@@ -211,6 +211,8 @@ a { color: var(--ink); }
 .footer-brand { display: flex; align-items: center; gap: 10px; color: var(--ink); font-family: Georgia, serif; font-size: 10px; line-height: 1.45; }
 .footer-brand small { color: var(--ink); font-family: inherit; font-size: 9px; }
 .footer-mark { color: var(--ink); font-size: 19px; }
+.footer-link { color: var(--ink); font-family: system-ui, sans-serif; font-size: 9px; text-decoration: none; white-space: nowrap; }
+.footer-link:hover { text-decoration: underline; }
 .credits { display: flex; align-items: center; gap: 13px; }
 .credits .eyebrow { margin-right: 1px; color: var(--ink); font-size: 8px; }
 .credits a, .credit-pending { color: var(--ink); text-decoration: none; font-size: 9px; }
