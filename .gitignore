@@ -2,6 +2,7 @@
 mainBIN/
 *.gba
 *.ppf
+!release/*.ppf
 *.sav
 *.srm
 

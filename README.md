@@ -1,12 +1,12 @@
 # Harmony of Dissonance Editor
 
-A local browser editor for Castlevania: Harmony of Dissonance, built for the supported modded ROM layout.
+A local browser editor for Castlevania: Harmony of Dissonance. It opens the clean US ROM, Castlevania Dissonance in Castle's Kitchen and earlier editor exports.
 
 ## Use
 
 1. Download or clone this repository.
 2. Open `index.html` in a modern browser.
-3. Choose **Load .gba** and select your compatible ROM or an earlier editor export.
+3. Choose **Load .gba** and select a clean US ROM, Castle's Kitchen or an earlier editor export.
 4. Edit rooms, enemy banks, pickups, or stats. Use **Undo** to reverse an edit.
 5. Choose **Download ROM** to save a separate edited copy.
 
@@ -26,6 +26,14 @@ Your ROM stays on your computer. The editor does not upload it.
 - Player progression, enemy and boss stats, spell costs, and supported spell power fields.
 - Undo and exports that can be reopened for further editing.
 
+## Castle's Kitchen tab
+
+The **Castle's Kitchen** tab presents the mod, with the Visual Improvement v1.2.9 [Chain] recolor built in.
+
+- **Download the PPF.** `release/Castle-Kitchen.ppf` is a forward PPF3 (block check, no undo data) from the clean US ROM (8 MiB, CRC32 `88C1B562`) to the release ROM. The tab lists the patch, input and output hashes.
+- **Build it here.** Choose the clean US ROM. The page checks its SHA-256, applies the patch on this device, checks the result's SHA-256, then offers **Download ROM** and **Open in editor**. Other regions, hacks and bad dumps are refused. When the page is opened as a local file, the browser may block reading the bundled patch; the tab then asks for the downloaded PPF as well.
+- **Release data.** `release/release.js` holds the hashes and build number (**K.NN**). After the main ROM changes, rebuild both files with `node tools/build-release.js --vanilla PATH`. It reads `mainBIN/Castlevania Dissonance in Castle's Kitchen.gba` (or `--rom PATH`), raises the build number when that ROM changed, and checks that the patch rebuilds it byte for byte.
+
 ## Files
 
 - `index.html`: editor page.
@@ -33,6 +41,8 @@ Your ROM stays on your computer. The editor does not upload it.
 - `profile.js`: supported ROM layouts and resource definitions.
 - `core.js`: ROM parsing, editing, and export.
 - `app.js`: editor controls.
+- `release-core.js`, `kitchen-ui.js`, `release/`: Castle's Kitchen patch, page and release data.
+- `tools/build-release.js`: builds the release PPF.
 
 There is no build step or package installation. Unsupported ROMs are rejected by compatibility checks.
 

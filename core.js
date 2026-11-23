@@ -74,8 +74,9 @@
 
   async function open(input) {
     check(input instanceof Uint8Array && input.length >= profile.size && input.length <= LIMIT,
-      'Choose the supported modded Harmony of Dissonance GBA ROM or an editor export.');
+      'Choose a clean US Harmony of Dissonance ROM, the supported modded ROM or an editor export.');
     const fromEditor = hasFooter(input);
+    let vanilla = false;
     const trailer = fromEditor ? bankTrailer(input) : {end: input.length, rooms: null};
     const bytes = new Uint8Array(input.subarray(0, trailer.end));
     const read = reader(bytes);
@@ -83,13 +84,16 @@
     check(title === profile.title && SIGNATURES.every(([at, value]) => read.word(at) === value),
       'This ROM has a different Harmony of Dissonance layout.');
     if (!fromEditor) {
-      check(profile.baseSizes.includes(bytes.length), 'This ROM differs from the supported modded base.');
+      check(profile.baseSizes.includes(bytes.length), 'This ROM differs from the clean US ROM and the supported modded base.');
       check(globalThis.crypto?.subtle, 'Open the editor from a local file or a secure website.');
       const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
       const actual = Array.from(hash, n => n.toString(16).padStart(2, '0')).join('');
-      check(profile.supportedHashes.includes(actual), 'This ROM differs from the supported modded base.');
+      check(profile.supportedHashes.includes(actual), 'This ROM differs from the clean US ROM and the supported modded base.');
+      vanilla = actual === profile.vanillaHash;
     }
-    return createModel(bytes, read, trailer.rooms);
+    const model = createModel(bytes, read, trailer.rooms);
+    model.vanilla = vanilla;
+    return model;
   }
 
   function textReader(read) {

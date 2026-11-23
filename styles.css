@@ -426,3 +426,29 @@ a { color: var(--ink); }
 .dialogue-preview { white-space: pre-wrap; overflow-wrap: anywhere; padding: 14px; background: #181818; font: inherit; line-height: 1.5; }
 .dialogue-block small { display: block; line-height: 1.6; }
 @media (max-width: 760px) { .dialogue-layout { grid-template-columns: 1fr; } #dialogue-list { max-height: 260px; } }
+
+/* Castle's Kitchen release tab */
+.kitchen-panel { padding: 26px 0 30px; }
+.kitchen-panel h1 { margin: 6px 0 8px; font-family: Georgia, "Times New Roman", serif; font-size: 26px; font-weight: 500; }
+.kitchen-panel p { color: var(--muted); font-size: 13px; line-height: 1.55; }
+.kitchen-panel p strong { color: var(--ink); }
+.kitchen-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 20px; }
+.kitchen-card { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--plum-850); }
+.kitchen-card h2 { margin: 0 0 6px; font-size: 13px; letter-spacing: .09em; text-transform: uppercase; }
+.kitchen-card .button { margin: 6px 8px 0 0; text-decoration: none; }
+.kitchen-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; margin: 16px 0 0; font-size: 11px; }
+.kitchen-facts dt { color: var(--quiet); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.kitchen-facts dd { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
+.kitchen-facts code { color: var(--ink); }
+.kitchen-status { min-height: 1.5em; margin: 14px 0 0; }
+.kitchen-status[data-kind="success"] { color: var(--green) !important; }
+.kitchen-status[data-kind="error"] { color: var(--red) !important; }
+.kitchen-actions { display: flex; flex-wrap: wrap; }
+.kitchen-actions[hidden], .kitchen-card label[hidden] { display: none; }
+.kitchen-features { margin-top: 16px; }
+.kitchen-features ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; margin: 12px 0 0; padding: 0; list-style: none; }
+.kitchen-features li { display: grid; gap: 3px; font-size: 13px; }
+.kitchen-features li span { color: var(--muted); line-height: 1.5; }
+@media (max-width: 760px) {
+  .kitchen-grid, .kitchen-features ul { grid-template-columns: 1fr; }
+}

@@ -1804,6 +1804,13 @@
     }
   }
 
+  window.HodApp = {
+    async openRom(file, panelId) {
+      await loadRom(file);
+      if (panelId && state.model) switchPanel(panelId);
+    },
+  };
+
   async function loadRom(file) {
     if (!file) return;
     const editor = window.HodEditor;
@@ -1837,7 +1844,7 @@
       renderMap();
       renderStats();
       window.HodDialogueUI.render(state.model);
-      showNotice("ROM loaded. Choose a room or edit a stat.", "success");
+      showNotice(nextModel.vanilla ? "Clean US ROM loaded. Choose a room or edit a stat." : "ROM loaded. Choose a room or edit a stat.", "success");
     } catch (error) {
       showNotice(error.message || "Could not open this ROM.", "error");
     } finally {
