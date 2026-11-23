@@ -13,6 +13,7 @@
 
   const features = [
     ['Visual Improvement recolor', 'Visual Improvement v1.2.9 [Chain]: new palettes for Juste, enemies and areas, brighter torches and effects, the Chain Whip and new walk and jump animations.'],
+    ['Dissonance in Castle Kitchen Story', 'A goofy story about Juste and Maxim trying to find Lydie and solve world hunger.'],
     ['Better Fast Travel', 'The Lure Key and Hint Card 3 come earlier, so teleporters open sooner.'],
     ['Air movement', 'Reworked air physics and mid-air whip landings, with quicker air-whip hits.'],
     ['Slide kick', "Juste can't be hit while sliding, and slide and brandish attacks are rebalanced."],
