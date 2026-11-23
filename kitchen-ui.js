@@ -25,7 +25,7 @@
     ['Bosses', 'Bosses have been revamped to be deadlier.'],
     ['Items', 'Equip an item and use it anywhere in the game, instantly.'],
     ['Map', "Dots mark item pickups you haven't collected, so you won't forget where you left things. Shop rooms have an orange marker."],
-    ['New Game+', 'After the best ending, name a new file NGPLUS to start with every whip part, spellbook and relic.'],
+    ['New Game+', 'After the best ending, name a new file NGPLUS to start in Hard mode with every whip part, spellbook and relic.'],
   ];
 
   panel.innerHTML = `
