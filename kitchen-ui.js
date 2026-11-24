@@ -26,6 +26,7 @@
     ['Items', 'Equip an item and use it anywhere in the game, instantly.'],
     ['Map', "Dots mark item pickups you haven't collected, so you won't forget where you left things. Shop rooms have an orange marker."],
     ['New Game+', 'After the best ending, name a new file NGPLUS to start in Hard mode with every whip part, spellbook and relic.'],
+    ['Hard mode', 'A single enemy hit normally takes at most 1/6 of your max HP. In Hard mode there is no limit.'],
   ];
 
   panel.innerHTML = `
