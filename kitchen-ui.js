@@ -36,7 +36,7 @@
       <section class="kitchen-card">
         <h2>Download the PPF</h2>
         <p>A PPF3 patch from the clean US ROM to ${esc(release.title)} ${esc(release.version)}, recolor included. Apply it with any PPF3 patcher, or build it below.</p>
-        <a class="button button-primary" id="kitchen-download-ppf" href="${esc(release.ppf.file)}" download="${esc(release.ppf.name)}"><span aria-hidden="true">↓</span><span>Download ${esc(release.ppf.name)}</span></a>
+        <a class="button button-primary" id="kitchen-download-ppf" href="${esc(release.ppf.download || release.ppf.file)}" download="${esc(release.ppf.name)}"><span aria-hidden="true">↓</span><span>Download ${esc(release.ppf.name)}</span></a>
         <dl class="kitchen-facts">
           <dt>Patch</dt><dd>${size(release.ppf.size)} · SHA-256 <code title="${release.ppf.sha256}">${short(release.ppf.sha256)}</code></dd>
           <dt>Input</dt><dd>${esc(release.vanilla.name)} · ${size(release.vanilla.size)} · CRC32 <code>${release.vanilla.crc32}</code> · SHA-256 <code title="${release.vanilla.sha256}">${short(release.vanilla.sha256)}</code></dd>

@@ -79,7 +79,10 @@ const data = {
   title: "Castlevania Dissonance in Castle's Kitchen",
   build, version,
   built: new Date().toISOString().slice(0, 10),
-  ppf: {file: 'release/Castle-Kitchen.ppf', name: `Castle-Kitchen-${version}.ppf`, size: ppf.length, sha256: sha(ppf), records: records.length},
+  ppf: {file: 'release/Castle-Kitchen.ppf',
+    // Counted download from the newest GitHub release
+    download: 'https://github.com/pddmergilla/hod-editor/releases/latest/download/Castle-Kitchen.ppf',
+    name: `Castle-Kitchen-${version}.ppf`, size: ppf.length, sha256: sha(ppf), records: records.length},
   vanilla: {name: 'Castlevania - Harmony of Dissonance (USA).gba', size: vanilla.length, sha256: VANILLA.sha256,
     crc32: kitchen.hex(kitchen.crc32(vanilla))},
   result: {name: "Castlevania Dissonance in Castle's Kitchen.gba", size: rom.length, sha256: romSha,

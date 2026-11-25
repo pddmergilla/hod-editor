@@ -6,6 +6,7 @@ globalThis.HodKitchenRelease = {
  "built": "2026-11-24",
  "ppf": {
   "file": "release/Castle-Kitchen.ppf",
+  "download": "https://github.com/pddmergilla/hod-editor/releases/latest/download/Castle-Kitchen.ppf",
   "name": "Castle-Kitchen-K.04.ppf",
   "size": 774151,
   "sha256": "8ADB3CFA4D1022C6EE89AD62231A4F10E134D829B1432AA6F48F3B6BD1416288",

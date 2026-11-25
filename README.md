@@ -30,7 +30,7 @@ Your ROM stays on your computer. The editor does not upload it.
 
 The **Castle's Kitchen** tab presents the mod, with the Visual Improvement v1.2.9 [Chain] recolor built in.
 
-- **Download the PPF.** `release/Castle-Kitchen.ppf` is a forward PPF3 (block check, no undo data) from the clean US ROM (8 MiB, CRC32 `88C1B562`) to the release ROM. The tab lists the patch, input and output hashes.
+- **Download the PPF.** The button downloads `Castle-Kitchen.ppf` from the latest GitHub release, so downloads are counted. Each new build needs a GitHub release with that file attached under the same name. `release/Castle-Kitchen.ppf` (same file) is a forward PPF3 (block check, no undo data) from the clean US ROM (8 MiB, CRC32 `88C1B562`) to the release ROM. The tab lists the patch, input and output hashes.
 - **Build it here.** Choose the clean US ROM. The page checks its SHA-256, applies the patch on this device, checks the result's SHA-256, then offers **Download ROM** and **Open in editor**. Other regions, hacks and bad dumps are refused. When the page is opened as a local file, the browser may block reading the bundled patch; the tab then asks for the downloaded PPF as well.
 - **Release data.** `release/release.js` holds the hashes and build number (**K.NN**). After the main ROM changes, rebuild both files with `node tools/build-release.js --vanilla PATH`. It reads `mainBIN/Castlevania Dissonance in Castle's Kitchen.gba` (or `--rom PATH`), raises the build number when that ROM changed, and checks that the patch rebuilds it byte for byte.
 
